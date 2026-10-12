@@ -5,6 +5,10 @@ import { Dimensions, StyleSheet, View } from 'react-native';
 import Animated, { Easing, Keyframe } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
+// The same two values the expo-splash-screen plugin sets in app.json. They must match:
+// this overlay has a higher zIndex than the permission gate, so any difference shows up
+// as a colour jump on the way into the app.
+const SPLASH_BG = '#103b2e';
 const INITIAL_SCALE_FACTOR = Dimensions.get('screen').height / 90;
 const DURATION = 600;
 
@@ -33,7 +37,7 @@ export function AnimatedSplashOverlay() {
     },
   });
 
-  const image = <Image style={styles.image} source={require('@/assets/images/expo-logo.png')} />;
+  const image = <Image style={styles.image} source={require('@/assets/images/splash-icon.png')} />;
 
   return animate ? (
     <Animated.View
@@ -128,8 +132,10 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   image: {
+    // 76 wide is the native splash's imageWidth; 80 keeps the asset's ~1.05 aspect so
+    // the logo is not stretched between the native splash and this overlay.
     width: 76,
-    height: 71,
+    height: 80,
   },
   background: {
     borderRadius: 40,
@@ -140,9 +146,12 @@ const styles = StyleSheet.create({
   },
   splashOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: '#208AEF',
+    backgroundColor: SPLASH_BG,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 1000,
+    // Pure decoration. Without this, an overlay that finished fading but never
+    // unmounted stays mounted at opacity 0 and silently eats every touch.
+    pointerEvents: 'none',
   },
 });

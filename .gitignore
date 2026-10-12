@@ -17,6 +17,12 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
+# `expo prebuild` writes the release signing key to the project root, not into
+# /android, so the entries above missed it. A committed keystore lets anyone
+# sign an update that installs over this app.
+*.keystore
+*.apk
+*.aab
 
 # Metro
 .metro-health-check*
@@ -41,3 +47,22 @@ example
 # generated native folders
 /ios
 /android
+
+# Local Expo module build output. The leading slash on /android above only matches the
+# folder at the repo root, so modules/<name>/android/build stayed unignored and
+# `git add modules` failed outright with "Filename too long" on gradle's generated
+# .dex paths. Only the .kt and build.gradle under it belong in the repo.
+modules/*/android/build/
+modules/*/android/.cxx/
+modules/*/android/.gradle/
+modules/*/ios/build/
+
+# opencode.json holds a live Google API key for the Stitch MCP server. It looks like
+# ordinary project config, so nothing else would stop it from being committed.
+opencode.json
+.opencode/
+
+# A pulled copy of the expense database. This app holds someone's real spending.
+*.db
+*.db-wal
+*.db-shm

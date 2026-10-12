@@ -1,0 +1,18 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application>
+    <!--
+      Declared in the manifest rather than registered at runtime so Android delivers
+      SMS_RECEIVED even when the app process is dead. SmsBridge queues anything that
+      arrives with no JS attached and replays it the next time the app starts.
+      android:permission=BROADCAST_SMS means only the telephony system can trigger it.
+    -->
+    <receiver
+      android:name="expo.modules.expensesms.SmsReceiver"
+      android:exported="true"
+      android:permission="android.permission.BROADCAST_SMS">
+      <intent-filter android:priority="999">
+        <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+      </intent-filter>
+    </receiver>
+  </application>
+</manifest>
