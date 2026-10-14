@@ -8,7 +8,7 @@ import { Button, Card, Chip, IconWell, Label, LineIcon, tint } from '@/component
 import { CATEGORIES, CATEGORY_COLORS, type Category } from '@/lib/categories';
 import {
   deleteExpense,
-  getExpense,
+  getExpenseByClientId,
   listSimilarExpenses,
   markNotExpenses,
   setCategory,
@@ -22,6 +22,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { MaxContentWidth, Radii, Spacing } from '@/constants/theme';
 
 export default function ExpenseScreen() {
+  // The route param is a clientId UUID, not the local autoincrement id: two devices
+  // each mint id 5 for different expenses once sync is on.
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const [expense, setExpenseState] = useState<Expense | null>(null);
@@ -31,7 +33,7 @@ export default function ExpenseScreen() {
   const theme = useTheme();
 
   const reload = useCallback(async () => {
-    setExpenseState(await getExpense(Number(id)));
+    setExpenseState(await getExpenseByClientId(id));
   }, [id]);
 
   useFocusEffect(useCallback(() => { void reload(); }, [reload]));

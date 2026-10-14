@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useFocusEffect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
@@ -17,6 +18,14 @@ import {
   runScan,
   type ScanState,
 } from '@/lib/sms';
+import {
+  onSyncState,
+  refreshState,
+  serverUrl,
+  signOut,
+  syncNow,
+  type SyncState,
+} from '@/lib/sync';
 import { clearAll, countExpenses } from '@/lib/db';
 import { formatINR } from '@/lib/money';
 import { BottomTabInset, MaxContentWidth, Radii, Spacing } from '@/constants/theme';
@@ -36,6 +45,16 @@ export default function SettingsScreen() {
   // just looks like something is wrong.
   const [scan, setScan] = useState<ScanState>({ running: false, done: 0, total: 0, added: 0 });
   useEffect(() => onScanState(setScan), []);
+  const [sync, setSync] = useState<SyncState | null>(null);
+  const [syncNote, setSyncNote] = useState<string | null>(null);
+  useEffect(() => onSyncState(setSync), []);
+  // Refocus re-reads the state, so the row is right even if a sync finished in the
+  // background while another screen was open.
+  useFocusEffect(
+    useCallback(() => {
+      void refreshState();
+    }, [])
+  );
   const totals = useMonthlyTotals(12);
   const lifetime = totals.reduce((sum, t) => sum + t.total, 0);
   const { mode, setMode } = useThemeMode();
@@ -186,6 +205,64 @@ export default function SettingsScreen() {
               );
             })}
           </View>
+        </Card>
+
+        <Label>Sync</Label>
+
+        <Card>
+          {serverUrl() === null ? (
+            <ThemedText type="small" themeColor="textMuted">
+              No sync server configured. Set EXPO_PUBLIC_SYNC_URL in the app config and
+              rebuild.
+            </ThemedText>
+          ) : sync?.lastSyncAt != null ? (
+            <>
+              <Row label="Last synced" value={new Date(sync.lastSyncAt).toLocaleString()} />
+              <Row label="Server" value={serverUrl() ?? ''} />
+              <Button
+                icon="refresh"
+                label={sync.running ? 'Syncing…' : 'Sync now'}
+                disabled={sync.running}
+                onPress={() =>
+                  void syncNow().then((r) =>
+                    setSyncNote(
+                      r.skipped === 'backoff'
+                        ? 'Waiting out the backoff after an earlier failure.'
+                        : r.ok
+                          ? `Sent ${r.pushed}, received ${r.pulled}.`
+                          : (r.error ?? 'Sync failed.')
+                    )
+                  )
+                }
+              />
+              {syncNote !== null && (
+                <ThemedText type="small" themeColor="textMuted">
+                  {syncNote}
+                </ThemedText>
+              )}
+              {sync.lastError !== null && sync.lastError !== '' && (
+                <ThemedText type="small" themeColor="textMuted">
+                  Last failure: {sync.lastError}
+                </ThemedText>
+              )}
+              <Button
+                label="Sign out of sync"
+                tone="danger"
+                onPress={() => void signOut().then(() => refreshState())}
+              />
+            </>
+          ) : (
+            <>
+              <ThemedText type="small" themeColor="textMuted">
+                Keeps a copy of your expenses on your own server so a lost phone is not a
+                lost history. Everything still works with the server down.
+              </ThemedText>
+              <Button
+                label="Sign in or create an account"
+                onPress={() => router.push('/account')}
+              />
+            </>
+          )}
         </Card>
 
         <Label style={{ color: theme.danger }}>Danger zone</Label>

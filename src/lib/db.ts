@@ -1,3 +1,4 @@
+import * as Crypto from 'expo-crypto';
 import * as SQLite from 'expo-sqlite';
 
 import { categorize, type Category } from './categories';
@@ -6,6 +7,13 @@ import { parseSms, classify } from './parse';
 
 export type Expense = {
   id: number;
+  /**
+   * Stable id minted on the phone at insert time, and the only identity that survives
+   * to a second device. `id` is an autoincrement integer, and two phones each mint id 5
+   * for different expenses — syncing on that would silently write one phone's merchant
+   * over the other's row. Also what deep links carry, for the same reason.
+   */
+  client_id: string;
   amount_paise: number;
   merchant: string | null;
   category: Category;
@@ -17,11 +25,47 @@ export type Expense = {
   is_expense: number;
   /** 1 when the message announced an upcoming charge rather than reporting one. */
   is_due: number;
+  /** When this row last changed on this device. Drives push-what-changed. */
+  updated_at: number;
 };
 
-export type Budget = { category: Category; monthly_paise: number };
+export type Budget = { category: Category; monthly_paise: number; updated_at: number };
+
+/**
+ * A delete waiting to be told to the other devices.
+ *
+ * A separate table rather than a `deleted_at` column on each synced table, so the local
+ * reads never have to learn to filter tombstones out — missing one filter on one of the
+ * eight expense queries is a deleted expense quietly reappearing in the monthly total.
+ * `kind` is 'expense' | 'budget' | 'exclusion'; `key` is clientId / category / merchant.
+ */
+export type Tombstone = { kind: string; key: string; updated_at: number };
+
+export type Exclusion = { merchant: string; updated_at: number };
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
+
+/**
+ * v4 UUID, the cross-device identity for an expense.
+ *
+ * crypto.randomUUID is not available in Hermes, and expo-crypto's is a native call — so
+ * this is the same value on every device rather than something that quietly differs.
+ */
+export function uuid(): string {
+  return Crypto.randomUUID();
+}
+
+/**
+ * Monotonic "now" for updated_at.
+ *
+ * Two edits inside the same millisecond would otherwise share a timestamp and the
+ * push-what-changed watermark would silently skip one of them.
+ */
+let lastStamp = 0;
+function stamp(): number {
+  lastStamp = Math.max(Date.now(), lastStamp + 1);
+  return lastStamp;
+}
 
 /**
  * Opens the database once and guarantees the schema exists before anyone writes.
@@ -75,6 +119,60 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       } catch {
         /* already migrated */
       }
+
+      // --- Sync migration -------------------------------------------------------
+      // Reindex, never rebuild: existing rows keep their ids, which every reader in the
+      // app still uses.
+      //
+      // One try per statement, not one try for the lot. A single try means a launch
+      // killed halfway never finishes the backfill — every later launch throws on the
+      // first ALTER and skips past the rest, leaving rows with no clientId that the
+      // first sync then quietly never sends.
+      for (const stmt of [
+        'ALTER TABLE expenses ADD COLUMN client_id TEXT;',
+        'ALTER TABLE expenses ADD COLUMN updated_at INTEGER;',
+        'ALTER TABLE budgets ADD COLUMN updated_at INTEGER;',
+        'ALTER TABLE exclusions ADD COLUMN updated_at INTEGER;',
+      ]) {
+        try {
+          await handle.execAsync(stmt);
+        } catch {
+          /* already migrated */
+        }
+      }
+
+      await handle.execAsync(
+        `CREATE TABLE IF NOT EXISTS tombstones (
+           kind TEXT NOT NULL,
+           key TEXT NOT NULL,
+           updated_at INTEGER NOT NULL,
+           PRIMARY KEY (kind, key)
+         );`,
+      );
+
+      // Backfilled with the row's own date rather than 0, so the first sync pushes the
+      // whole existing history instead of nothing.
+      await handle.runAsync('UPDATE expenses SET updated_at = txn_at WHERE updated_at IS NULL;');
+      await handle.runAsync('UPDATE budgets SET updated_at = 0 WHERE updated_at IS NULL;');
+      await handle.runAsync('UPDATE exclusions SET updated_at = 0 WHERE updated_at IS NULL;');
+
+      // One row at a time because the value is a UUID from JS. Runs on every open, and
+      // is a no-op once every row has one.
+      const blank = await handle.getAllAsync<{ id: number }>(
+        'SELECT id FROM expenses WHERE client_id IS NULL;'
+      );
+      for (const row of blank) {
+        await handle.runAsync('UPDATE expenses SET client_id = ? WHERE id = ?', uuid(), row.id);
+      }
+
+      // Partial, so the NULLs a half-finished migration leaves behind never trip the
+      // UNIQUE constraint.
+      await handle.execAsync(
+        'CREATE UNIQUE INDEX IF NOT EXISTS idx_expenses_client_id ON expenses (client_id) WHERE client_id IS NOT NULL;'
+      );
+      await handle.execAsync(
+        'CREATE INDEX IF NOT EXISTS idx_expenses_updated_at ON expenses (updated_at);'
+      );
       return handle;
     })
     .catch((error) => {
@@ -125,8 +223,8 @@ export async function ingestSms(
   // import of the same SMS cannot slip a duplicate past a separate lookup.
   const info = await d.runAsync(
     `INSERT OR IGNORE INTO expenses
-       (amount_paise, merchant, category, txn_at, note, raw_sms, dedupe_key, source, is_expense, is_due)
-     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
+       (amount_paise, merchant, category, txn_at, note, raw_sms, dedupe_key, source, is_expense, is_due, client_id, updated_at)
+     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
     amountPaise,
     merchant,
     category,
@@ -135,7 +233,9 @@ export async function ingestSms(
     dedupeKey(body, txnAt),
     source,
     kind === 'spend' ? 1 : 0,
-    isDue
+    isDue,
+    uuid(),
+    stamp()
   );
   return info.changes === 0
     ? { status: 'duplicate' }
@@ -166,9 +266,10 @@ export async function reclassifyPending(): Promise<number> {
     const kind = classify(r.raw_sms);
     if (kind === 'spend') continue;
     await d.runAsync(
-      'UPDATE expenses SET is_due = ?, is_expense = 0, category = ? WHERE id = ?',
+      'UPDATE expenses SET is_due = ?, is_expense = 0, category = ?, updated_at = ? WHERE id = ?',
       kind === 'due' ? 1 : r.is_due,
       kind === 'transfer' ? 'Transfer' : r.category,
+      stamp(),
       r.id
     );
     changed++;
@@ -228,10 +329,20 @@ export async function listBudgets(): Promise<Budget[]> {
 export async function setBudget(category: Category, monthlyPaise: number): Promise<void> {
   const d = await getDb();
   await d.runAsync(
-    `INSERT INTO budgets (category, monthly_paise) VALUES (?, ?)
-     ON CONFLICT (category) DO UPDATE SET monthly_paise = excluded.monthly_paise`,
+    `INSERT INTO budgets (category, monthly_paise, updated_at) VALUES (?, ?, ?)
+     ON CONFLICT (category) DO UPDATE SET monthly_paise = excluded.monthly_paise,
+                                        updated_at = excluded.updated_at`,
     category,
-    monthlyPaise
+    monthlyPaise,
+    stamp()
+  );
+}
+
+/** Deep links carry clientId, not the local integer: see Expense.client_id. */
+export async function getExpenseByClientId(clientId: string): Promise<Expense | null> {
+  const d = await getDb();
+  return (
+    (await d.getFirstAsync<Expense>('SELECT * FROM expenses WHERE client_id = ?', clientId)) ?? null
   );
 }
 
@@ -240,14 +351,40 @@ export async function getExpense(id: number): Promise<Expense | null> {
   return (await d.getFirstAsync<Expense>('SELECT * FROM expenses WHERE id = ?', id)) ?? null;
 }
 
+/**
+ * Removes the row locally and leaves a tombstone behind.
+ *
+ * The row itself has to go — every total, list and picker reads it, and a `deleted_at`
+ * filter missing from one of them would put a deleted expense back in the month's total.
+ * The tombstone is what carries the delete to the other devices.
+ */
 export async function deleteExpense(id: number): Promise<void> {
   const d = await getDb();
-  await d.runAsync('DELETE FROM expenses WHERE id = ?', id);
+  const row = await d.getFirstAsync<{ client_id: string }>(
+    'SELECT client_id FROM expenses WHERE id = ?',
+    id
+  );
+  await d.withTransactionAsync(async () => {
+    await d.runAsync('DELETE FROM expenses WHERE id = ?', id);
+    if (row !== null) {
+      await d.runAsync(
+        `INSERT INTO tombstones (kind, key, updated_at) VALUES ('expense', ?, ?)
+         ON CONFLICT (kind, key) DO UPDATE SET updated_at = excluded.updated_at`,
+        row.client_id,
+        stamp()
+      );
+    }
+  });
 }
 
 export async function setCategory(id: number, category: Category): Promise<void> {
   const d = await getDb();
-  await d.runAsync('UPDATE expenses SET category = ? WHERE id = ?', category, id);
+  await d.runAsync(
+    'UPDATE expenses SET category = ?, updated_at = ? WHERE id = ?',
+    category,
+    stamp(),
+    id
+  );
 }
 
 /** Blank is stored as NULL so an untouched note stays indistinguishable from no note. */
@@ -255,8 +392,9 @@ export async function setNote(id: number, note: string): Promise<void> {
   const d = await getDb();
   const trimmed = note.trim();
   await d.runAsync(
-    'UPDATE expenses SET note = ? WHERE id = ?',
+    'UPDATE expenses SET note = ?, updated_at = ? WHERE id = ?',
     trimmed === '' ? null : trimmed,
+    stamp(),
     id
   );
 }
@@ -289,14 +427,43 @@ export async function listExclusions(): Promise<string[]> {
   return rows.map((r) => r.merchant);
 }
 
+/** Tombstoned rather than deleted, so the other devices stop logging this merchant too. */
 export async function addExclusion(merchant: string): Promise<void> {
   const d = await getDb();
-  await d.runAsync('INSERT OR IGNORE INTO exclusions (merchant) VALUES (?)', exclusionKey(merchant));
+  const key = exclusionKey(merchant);
+  const at = stamp();
+  await d.withTransactionAsync(async () => {
+    await d.runAsync(
+      `INSERT INTO exclusions (merchant, updated_at) VALUES (?, ?)
+       ON CONFLICT (merchant) DO UPDATE SET updated_at = excluded.updated_at`,
+      key,
+      at
+    );
+    await clearTombstone(d, 'exclusion', key);
+  });
 }
 
 export async function removeExclusion(merchant: string): Promise<void> {
   const d = await getDb();
-  await d.runAsync('DELETE FROM exclusions WHERE merchant = ?', exclusionKey(merchant));
+  const key = exclusionKey(merchant);
+  const at = stamp();
+  await d.withTransactionAsync(async () => {
+    await d.runAsync('DELETE FROM exclusions WHERE merchant = ?', key);
+    await d.runAsync(
+      `INSERT INTO tombstones (kind, key, updated_at) VALUES ('exclusion', ?, ?)
+       ON CONFLICT (kind, key) DO UPDATE SET updated_at = excluded.updated_at`,
+      key,
+      at
+    );
+  });
+}
+
+export async function clearTombstone(
+  d: SQLite.SQLiteDatabase,
+  kind: string,
+  key: string
+): Promise<void> {
+  await d.runAsync('DELETE FROM tombstones WHERE kind = ? AND key = ?', kind, key);
 }
 
 /**
@@ -314,7 +481,12 @@ export async function setExpense(
   isDue = false
 ): Promise<void> {
   const d = await getDb();
-  await d.runAsync('UPDATE expenses SET is_expense = ? WHERE id = ?', isExpense ? 1 : 0, id);
+  await d.runAsync(
+    'UPDATE expenses SET is_expense = ?, updated_at = ? WHERE id = ?',
+    isExpense ? 1 : 0,
+    stamp(),
+    id
+  );
   if (!merchant || isDue) return;
   if (isExpense) await removeExclusion(merchant);
   else await addExclusion(merchant);
@@ -362,14 +534,31 @@ export async function markNotExpenses(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
   const d = await getDb();
   await d.runAsync(
-    `UPDATE expenses SET is_expense = 0 WHERE id IN (${ids.map(() => '?').join(',')})`,
+    `UPDATE expenses SET is_expense = 0, updated_at = ? WHERE id IN (${ids.map(() => '?').join(',')})`,
+    stamp(),
     ...ids
   );
 }
 
+/**
+ * Danger zone. Deletes every row and tombstones each one, so a synced device deletes
+ * them too rather than quietly pushing them all back on the next sync.
+ */
 export async function clearAll(): Promise<void> {
   const d = await getDb();
-  await d.runAsync('DELETE FROM expenses');
+  const rows = await d.getAllAsync<{ client_id: string }>('SELECT client_id FROM expenses');
+  const at = stamp();
+  await d.withTransactionAsync(async () => {
+    await d.runAsync('DELETE FROM expenses');
+    for (const r of rows) {
+      await d.runAsync(
+        `INSERT INTO tombstones (kind, key, updated_at) VALUES ('expense', ?, ?)
+         ON CONFLICT (kind, key) DO UPDATE SET updated_at = excluded.updated_at`,
+        r.client_id,
+        at
+      );
+    }
+  });
 }
 
 export async function getPref(key: string): Promise<string | null> {
@@ -386,4 +575,260 @@ export async function setPref(key: string, value: string): Promise<void> {
     key,
     value
   );
+}
+
+/* ---------------------------------------------------------------------------
+ * Everything below exists only for sync.ts. Kept here rather than in sync.ts so the
+ * SQL stays in one file and a query change cannot miss a writer.
+ * ------------------------------------------------------------------------- */
+
+/** One local row in the wire shape. `dedupe_key` is needed so the server can dedupe too. */
+export type PushableExpense = {
+  clientId: string;
+  amountPaise: number;
+  merchant: string | null;
+  category: string;
+  txnAt: number;
+  note: string | null;
+  rawSms: string;
+  dedupeKey: string;
+  source: string;
+  isExpense: boolean;
+  isDue: boolean;
+  deleted: boolean;
+};
+
+/**
+ * Everything changed since `since`, oldest first.
+ *
+ * `since` is the last successful sync's watermark, and rows carry the stamp they were
+ * given when they were written, so a row edited twice is sent once with its final value.
+ */
+export async function expensesSince(since: number): Promise<PushableExpense[]> {
+  const d = await getDb();
+  const rows = await d.getAllAsync<{
+    client_id: string;
+    amount_paise: number;
+    merchant: string | null;
+    category: string;
+    txn_at: number;
+    note: string | null;
+    raw_sms: string;
+    dedupe_key: string;
+    source: string;
+    is_expense: number;
+    is_due: number;
+  }>('SELECT * FROM expenses WHERE updated_at > ? ORDER BY updated_at', since);
+
+  const tombs = await tombstonesSince(since, 'expense');
+  const deleted = new Set(tombs.map((t) => t.key));
+
+  const live = rows.map((r) => ({
+    clientId: r.client_id,
+    amountPaise: r.amount_paise,
+    merchant: r.merchant,
+    category: r.category,
+    txnAt: r.txn_at,
+    note: r.note,
+    rawSms: r.raw_sms,
+    dedupeKey: r.dedupe_key,
+    source: r.source,
+    isExpense: r.is_expense === 1,
+    isDue: r.is_due === 1,
+    deleted: false,
+  }));
+
+  return [
+    ...live,
+    // A tombstone carries no payload; the server only needs to know the row is gone.
+    ...[...deleted].map((key) => ({
+      clientId: key,
+      amountPaise: 0,
+      merchant: null,
+      category: '',
+      txnAt: 0,
+      note: null,
+      rawSms: '',
+      dedupeKey: '',
+      source: '',
+      isExpense: false,
+      isDue: false,
+      deleted: true,
+    })),
+  ];
+}
+
+export async function budgetsSince(since: number): Promise<{ category: string; monthlyPaise: number; deleted: boolean }[]> {
+  const d = await getDb();
+  const rows = await d.getAllAsync<{ category: string; monthly_paise: number }>(
+    'SELECT category, monthly_paise FROM budgets WHERE updated_at > ? ORDER BY updated_at',
+    since
+  );
+  const deleted = new Set((await tombstonesSince(since, 'budget')).map((t) => t.key));
+  return [
+    ...rows.map((r) => ({ category: r.category, monthlyPaise: r.monthly_paise, deleted: false })),
+    ...[...deleted].map((category) => ({ category, monthlyPaise: 0, deleted: true })),
+  ];
+}
+
+export async function exclusionsSince(since: number): Promise<{ merchant: string; deleted: boolean }[]> {
+  const d = await getDb();
+  const rows = await d.getAllAsync<{ merchant: string }>(
+    'SELECT merchant FROM exclusions WHERE updated_at > ? ORDER BY updated_at',
+    since
+  );
+  const deleted = new Set((await tombstonesSince(since, 'exclusion')).map((t) => t.key));
+  return [
+    ...rows.map((r) => ({ merchant: r.merchant, deleted: false })),
+    ...[...deleted].map((merchant) => ({ merchant, deleted: true })),
+  ];
+}
+
+async function tombstonesSince(since: number, kind: string): Promise<Tombstone[]> {
+  const d = await getDb();
+  return d.getAllAsync<Tombstone>(
+    'SELECT kind, key, updated_at FROM tombstones WHERE kind = ? AND updated_at > ?',
+    kind,
+    since
+  );
+}
+
+/** A remote row. Same shape the server sends, which is the wire shape. */
+export type RemoteExpense = {
+  clientId: string;
+  amountPaise: number;
+  merchant: string | null;
+  category: string;
+  txnAt: number;
+  note: string | null;
+  rawSms: string;
+  dedupeKey: string;
+  source: string;
+  isExpense: boolean;
+  isDue: boolean;
+  deletedAt: number | null;
+};
+
+/**
+ * Applies one pulled expense, or deletes it when it arrives as a tombstone.
+ *
+ * `INSERT OR REPLACE` on `client_id`, matched on the partial unique index. A remote row
+ * that collides on `dedupe_key` instead — the same SMS captured on two phones — is
+ * reported by the server as a duplicate before it gets here, so this never sees one.
+ *
+ * `updated_at` is set to the arrival stamp rather than the sender's, so a row pulled from
+ * the other phone does not look like a local edit and get pushed straight back.
+ */
+export async function applyRemote(row: RemoteExpense): Promise<void> {
+  const d = await getDb();
+  const at = stamp();
+
+  if (row.deletedAt !== null) {
+    await d.withTransactionAsync(async () => {
+      await d.runAsync('DELETE FROM expenses WHERE client_id = ?', row.clientId);
+      await d.runAsync(
+        `INSERT INTO tombstones (kind, key, updated_at) VALUES ('expense', ?, ?)
+         ON CONFLICT (kind, key) DO NOTHING`,
+        row.clientId,
+        at
+      );
+    });
+    return;
+  }
+
+  await d.withTransactionAsync(async () => {
+    await d.runAsync('DELETE FROM expenses WHERE client_id = ?', row.clientId);
+    await clearTombstone(d, 'expense', row.clientId);
+    await d.runAsync(
+      `INSERT OR REPLACE INTO expenses
+         (client_id, amount_paise, merchant, category, txn_at, note, raw_sms,
+          dedupe_key, source, is_expense, is_due, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      row.clientId,
+      row.amountPaise,
+      row.merchant,
+      row.category,
+      row.txnAt,
+      row.note,
+      row.rawSms,
+      row.dedupeKey,
+      row.source,
+      row.isExpense ? 1 : 0,
+      row.isDue ? 1 : 0,
+      at
+    );
+  });
+}
+
+export async function applyRemoteBudget(b: {
+  category: string;
+  monthlyPaise: number;
+  deletedAt: number | null;
+}): Promise<void> {
+  const d = await getDb();
+  const at = stamp();
+  await d.withTransactionAsync(async () => {
+    if (b.deletedAt !== null) {
+      await d.runAsync('DELETE FROM budgets WHERE category = ?', b.category);
+      await d.runAsync(
+        `INSERT INTO tombstones (kind, key, updated_at) VALUES ('budget', ?, ?)
+         ON CONFLICT (kind, key) DO NOTHING`,
+        b.category,
+        at
+      );
+      return;
+    }
+    await clearTombstone(d, 'budget', b.category);
+    await d.runAsync(
+      `INSERT INTO budgets (category, monthly_paise, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT (category) DO UPDATE SET monthly_paise = excluded.monthly_paise,
+                                          updated_at = excluded.updated_at`,
+      b.category,
+      b.monthlyPaise,
+      at
+    );
+  });
+}
+
+export async function applyRemoteExclusion(x: { merchant: string; deletedAt: number | null }): Promise<void> {
+  const d = await getDb();
+  const at = stamp();
+  await d.withTransactionAsync(async () => {
+    if (x.deletedAt !== null) {
+      await d.runAsync('DELETE FROM exclusions WHERE merchant = ?', x.merchant);
+      await d.runAsync(
+        `INSERT INTO tombstones (kind, key, updated_at) VALUES ('exclusion', ?, ?)
+         ON CONFLICT (kind, key) DO NOTHING`,
+        x.merchant,
+        at
+      );
+      return;
+    }
+    await clearTombstone(d, 'exclusion', x.merchant);
+    await d.runAsync(
+      `INSERT INTO exclusions (merchant, updated_at) VALUES (?, ?)
+       ON CONFLICT (merchant) DO UPDATE SET updated_at = excluded.updated_at`,
+      x.merchant,
+      at
+    );
+  });
+}
+
+/** Drops the local copy of a row the server already holds under another clientId. */
+export async function dropByClientId(clientId: string): Promise<void> {
+  const d = await getDb();
+  await d.runAsync('DELETE FROM expenses WHERE client_id = ?', clientId);
+}
+
+export async function highestStamp(): Promise<number> {
+  const d = await getDb();
+  const row = await d.getFirstAsync<{ m: number | null }>(
+    `SELECT MAX(m) AS m FROM (
+       SELECT MAX(updated_at) AS m FROM expenses
+       UNION ALL SELECT MAX(updated_at) FROM budgets
+       UNION ALL SELECT MAX(updated_at) FROM exclusions
+       UNION ALL SELECT MAX(updated_at) FROM tombstones
+     )`,
+  );
+  return row?.m ?? 0;
 }

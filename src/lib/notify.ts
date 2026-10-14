@@ -91,7 +91,10 @@ export async function notifyExpense(id: number): Promise<void> {
       content: {
         title: `${expense.merchant ?? 'Unknown merchant'} −${formatINR(expense.amount_paise)}`,
         body: budgetLine(budgetStats(spent, target, expense.txn_at)),
-        data: { url: `/expense/${expense.id}` },
+        // clientId, not the local integer: after sync the same integer exists on two
+        // devices meaning two different expenses, so a notification built from it would
+        // open the wrong one.
+        data: { url: `/expense/${expense.client_id}` },
       },
       // Not `trigger: null`: that posts immediately but lands on expo-notifications'
       // fallback channel, so the HIGH importance set above is silently ignored.

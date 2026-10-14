@@ -8,6 +8,7 @@ import { Button, Label, LineIcon } from '@/components/ui-kit';
 import { useTheme } from '@/hooks/use-theme';
 import { getPref, setPref } from '@/lib/db';
 import { ensureNotificationsReady } from '@/lib/notify';
+import { serverUrl } from '@/lib/sync';
 import {
   hasSmsPermission,
   isAndroid,
@@ -90,8 +91,9 @@ export function SmsPermissionGate() {
 
         <View style={[styles.note, { backgroundColor: theme.surface, borderColor: theme.border }]}>
           <ThemedText type="small" themeColor="textMuted">
-            Messages stay on this phone. Nothing is uploaded and no account is created. You can
-            still paste messages by hand if you say no.
+            {serverUrl() === null
+              ? 'Messages stay on this phone. Nothing is uploaded and no account is created. You can still paste messages by hand if you say no.'
+              : 'Messages stay on this phone unless you turn on sync, in which case a copy goes to your own server. You can still paste messages by hand if you say no.'}
           </ThemedText>
         </View>
 

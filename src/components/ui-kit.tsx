@@ -116,6 +116,12 @@ const GLYPHS: Record<Category, ReactNode> = {
       <Circle cx="18.5" cy="12" r="1.6" />
     </>
   ),
+  Rent: (
+    <>
+      <Path d="M3 11 12 4l9 7" />
+      <Path d="M5.5 9.5V20h13V9.5" />
+    </>
+  ),
 };
 
 export function CategoryIcon({
@@ -183,6 +189,11 @@ const LINE_GLYPHS: Record<string, ReactNode> = {
     <>
       <Path d="M5 6h14v10H5V6Z" />
       <Path d="M2 19h20" />
+    </>
+  ),
+  cloud: (
+    <>
+      <Path d="M7 18h10.5a4 4 0 0 0 .4-8A6 6 0 0 0 6.3 8.6 4.3 4.3 0 0 0 7 18Z" />
     </>
   ),
 };

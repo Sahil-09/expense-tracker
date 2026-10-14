@@ -190,7 +190,7 @@ export default function TimelineScreen() {
                   borderBottomRightRadius: last ? 20 : 0,
                 },
               ]}
-              onPress={() => router.push(`/expense/${item.id}`)}>
+              onPress={() => router.push(`/expense/${item.client_id}`)}>
               <IconWell category={item.category} size={38} />
               <View style={styles.rowText}>
                 <ThemedText

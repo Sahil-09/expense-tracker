@@ -37,7 +37,13 @@ yarn-error.*
 *.pem
 
 # local env files
+.env
 .env*.local
+# .env.example is committed on purpose: it documents EXPO_PUBLIC_SYNC_URL.
+
+# build and device scratch
+build.log
+ui.xml
 
 # typescript
 *.tsbuildinfo

@@ -4,6 +4,7 @@ import {
   DefaultTheme,
   ThemeProvider,
   router,
+  useFocusEffect,
   usePathname,
   type Href,
 } from 'expo-router';
@@ -16,13 +17,15 @@ import {
   Inter_700Bold,
   useFonts,
 } from '@expo-google-fonts/inter';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, View } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { SmsPermissionGate } from '@/components/sms-permission-gate';
 import { ThemeModeProvider, useTheme, useThemeMode } from '@/hooks/use-theme';
 import { hasSmsPermission, runScan, startLiveCapture } from '@/lib/sms';
+import { getPref } from '@/lib/db';
+import { serverUrl, startBackgroundSync } from '@/lib/sync';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -52,8 +55,10 @@ let autoScanned = false;
 /**
  * The only route an expense notification ever links to. Matching it is what lets the
  * string become a typed Href, and keeps a tampered payload from navigating anywhere.
+ *
+ * A clientId UUID, not the old local integer — see the note on Expense.client_id.
  */
-const EXPENSE_ROUTE = /^\/expense\/\d+$/;
+const EXPENSE_ROUTE = /^\/expense\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const urlOf = (n: Notifications.Notification): Href | null => {
   const url = n.request.content.data?.url;
@@ -72,17 +77,73 @@ function NavigationShell() {
   const theme = useTheme();
   const { isDark } = useThemeMode();
 
+  const [fontsLoaded, fontError] = useFonts({
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+  });
+
+  const pathname = usePathname();
+  /** Once per launch. Without this the redirect fights the answer. */
+  const redirectAttempted = useRef(false);
+
+  const [onboarding, setOnboarding] = useState<null | boolean>(null);
+
+  // Re-read on every focus, not just at mount: the account screen answers the question by
+  // writing the pref and navigating away, and the gate below waits on this.
+  const readOnboarding = useCallback(() => {
+    void (async () => {
+      // Only ask when there is a server to ask about. A build with no EXPO_PUBLIC_SYNC_URL
+      // has no accounts to make, so it goes straight to the SMS question as before.
+      if (serverUrl() === null) {
+        setOnboarding(true);
+        return;
+      }
+      setOnboarding((await getPref('onboarded')) === '1');
+    })();
+  }, []);
+
+  // Re-read on mount and again on every navigation, not on focus: this is the root
+  // layout, so it never actually loses focus and a focus-based re-read fires exactly
+  // once. Navigating away from /account is what writes the pref, so the navigation is
+  // the signal.
+  useEffect(() => {
+    readOnboarding();
+  }, [readOnboarding, pathname]);
+
+  useEffect(() => {
+    // replace, not push: back from a first-run screen should leave the app, not land on
+    // an empty Timeline behind a screen the user has not answered yet.
+    //
+    // Once only. Navigating away writes the pref and replaces to '/', which changes the
+    // pathname and re-runs this before the re-read lands — so without the guard it pushes
+    // the user straight back to /account after they answered.
+    if (onboarding === false && !redirectAttempted.current) {
+      redirectAttempted.current = true;
+      router.replace('/account');
+    }
+  }, [onboarding]);
+
   // App-wide, so a bank SMS is captured no matter which tab is open. Also drains
   // anything the manifest receiver queued while the app was closed.
   useEffect(() => {
     startLiveCapture();
   }, []);
 
+  // Foreground is the natural sync trigger: it is the only moment we know the user is
+  // looking at the app, and a failure here has nowhere to go. startBackgroundSync never
+  // rejects and never blocks the tree, so this cannot wedge startup on a dead server.
+  useFocusEffect(
+    useCallback(() => {
+      startBackgroundSync();
+    }, [])
+  );
+
 
   // expo-router's native tabs never handle a back action (NativeBottomTabsRouter has no
   // GO_BACK branch, and backBehavior is only its default), so back on any tab but Timeline
   // pops the whole tabs screen and drops out of the app. Land on Timeline first instead.
-  const pathname = usePathname();
   useEffect(() => {
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
       if (!SECONDARY_TABS.includes(pathname)) return false;
@@ -115,13 +176,12 @@ function NavigationShell() {
   }, []);
 
   // Rendering before Inter arrives flashes the system face, then swaps. Hold the tree.
-  const [fontsLoaded, fontError] = useFonts({
-    Inter_400Regular,
-    Inter_500Medium,
-    Inter_600SemiBold,
-    Inter_700Bold,
-  });
-
+  //
+  // `onboarding` is null until the pref read resolves, and that is the same hold: without
+  // it the SMS gate would ask its question before the account question, which is the
+  // reverse of the order the user actually wants. Both are below every hook, so hook
+  // order never changes.
+  //
   // Built on expo-router's own themes so the stack header inherits the app palette
   // without re-declaring the font tokens React Navigation expects.
   const navTheme = useMemo(
@@ -141,14 +201,19 @@ function NavigationShell() {
     [isDark, theme]
   );
 
-  if (!fontsLoaded && !fontError) return <View style={{ flex: 1, backgroundColor: theme.background }} />;
+  if ((!fontsLoaded && !fontError) || onboarding === null) {
+    return <View style={{ flex: 1, backgroundColor: theme.background }} />;
+  }
 
   return (
     <ThemeProvider value={navTheme}>
       <AnimatedSplashOverlay />
-      <SmsPermissionGate />
+      {/* Gated on the account question, not just on the pref having loaded: otherwise both
+          questions are on screen at once, and the SMS one is on top. */}
+      {onboarding === true && <SmsPermissionGate />}
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="account" options={{ headerShown: false }} />
         <Stack.Screen name="expense/[id]" options={{ title: 'Expense' }} />
       </Stack>
     </ThemeProvider>
