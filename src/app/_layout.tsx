@@ -4,7 +4,6 @@ import {
   DefaultTheme,
   ThemeProvider,
   router,
-  useFocusEffect,
   usePathname,
   type Href,
 } from 'expo-router';
@@ -18,7 +17,7 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BackHandler, View } from 'react-native';
+import { AppState, BackHandler, View } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { SmsPermissionGate } from '@/components/sms-permission-gate';
@@ -134,11 +133,19 @@ function NavigationShell() {
   // Foreground is the natural sync trigger: it is the only moment we know the user is
   // looking at the app, and a failure here has nowhere to go. startBackgroundSync never
   // rejects and never blocks the tree, so this cannot wedge startup on a dead server.
-  useFocusEffect(
-    useCallback(() => {
-      startBackgroundSync();
-    }, [])
-  );
+  //
+  // AppState rather than useFocusEffect. This is the root layout, which never loses
+  // focus, so a focus-based callback fires exactly once at mount and never again — the
+  // same trap that broke the onboarding redirect. AppState is the platform's own
+  // foreground signal and does not care how the navigator is structured.
+  useEffect(() => {
+    // AppState is already 'active' on a cold start, so no 'change' event fires for it.
+    startBackgroundSync();
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next === 'active') startBackgroundSync();
+    });
+    return () => sub.remove();
+  }, []);
 
 
   // expo-router's native tabs never handle a back action (NativeBottomTabsRouter has no

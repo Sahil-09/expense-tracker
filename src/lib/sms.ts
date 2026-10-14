@@ -4,6 +4,7 @@ import ExpenseSms from '@/modules/expense-sms/src/ExpenseSmsModule';
 
 import { ingestSms, reclassifyPending } from './db';
 import { notifyExpense } from './notify';
+import { syncInBackground } from './sync';
 
 export const isAndroid = Platform.OS === 'android';
 
@@ -89,6 +90,10 @@ export async function runScan(): Promise<ScanResult> {
   try {
     const result = await scanInbox((done, total) => setScanState({ done, total }));
     setScanState({ running: false, added: result.ok ? result.added : 0 });
+    // A scan that found nothing has nothing to push, and a scan that found something has
+    // rows the server has never seen. This is the "fires after a scan" trigger; the other
+    // one is app-foreground, in _layout.
+    if (result.ok && result.added > 0) syncInBackground();
     return result;
   } catch (e) {
     setScanState({ running: false });
