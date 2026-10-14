@@ -41,6 +41,15 @@ Notifications.setNotificationHandler({
 const SECONDARY_TABS = ['/add', '/budgets', '/insights', '/settings'];
 
 /**
+ * The auto-scan is a once-per-launch thing, so it is guarded here rather than by an empty
+ * dep array alone. The root layout can mount more than once in the life of a process —
+ * a Fast Refresh, a theme change re-creating the tree — and each remount would otherwise
+ * start another full-inbox scan on top of the one still running. This resets only when
+ * the JS process does, which is exactly what "on launch" means.
+ */
+let autoScanned = false;
+
+/**
  * The only route an expense notification ever links to. Matching it is what lets the
  * string become a typed Href, and keeps a tampered payload from navigating anywhere.
  */
@@ -69,13 +78,6 @@ function NavigationShell() {
     startLiveCapture();
   }, []);
 
-  // Fresh launch scans on its own. The month you open the app is the one you most want
-  // current, and waiting for a button press means the first thing you see is stale.
-  useEffect(() => {
-    void (async () => {
-      if (await hasSmsPermission()) await runScan().catch(() => {});
-    })();
-  }, []);
 
   // expo-router's native tabs never handle a back action (NativeBottomTabsRouter has no
   // GO_BACK branch, and backBehavior is only its default), so back on any tab but Timeline

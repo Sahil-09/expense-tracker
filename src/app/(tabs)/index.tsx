@@ -6,14 +6,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MonthBar } from '@/components/month-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Chip, IconWell, Label, LineIcon, ProgressBar } from '@/components/ui-kit';
+import { Chip, IconWell, Label, ProgressBar } from '@/components/ui-kit';
 import { CATEGORIES, CATEGORY_COLORS, type Category } from '@/lib/categories';
 import { useBudgets, useMonthData } from '@/hooks/use-data';
 import type { Expense } from '@/lib/db';
 import { dayLabel, formatINR, monthStart } from '@/lib/money';
-import { onCaptured, onScanState, runScan, type ScanState } from '@/lib/sms';
+import { onCaptured } from '@/lib/sms';
 import { useTheme } from '@/hooks/use-theme';
-import { BottomTabInset, MaxContentWidth, Radii, Spacing } from '@/constants/theme';
+import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 
 type Row = { title: string; total: number; data: Expense[]; kind: 'day' | 'due' | 'excluded' };
 
@@ -27,34 +27,15 @@ export default function TimelineScreen() {
   const { filter: filterParam } = useLocalSearchParams<{ filter?: string }>();
   const filter = CATEGORIES.includes(filterParam as Category) ? (filterParam as Category) : null;
   const setFilter = (next: Category | null) => {
-    setScanNote(null);
     router.setParams({ filter: next ?? undefined });
   };
-  const [scanNote, setScanNote] = useState<string | null>(null);
-  const [scan, setScan] = useState<ScanState>({ running: false, done: 0, total: 0, added: 0 });
   const { expenses, total, reload } = useMonthData(monthMs);
   const { budgets } = useBudgets();
 
   // Live capture: a bank SMS arriving while this screen is open shows up without a refresh.
+  // Nothing to kick off here either: the launch auto-scan is the only trigger, so a scan
+  // can be running with nobody having pressed anything.
   useEffect(() => onCaptured(() => void reload()), [reload]);
-
-  // A scan started anywhere (launch auto-scan, the gate, Settings) shows its bar here.
-  useEffect(() => onScanState(setScan), []);
-
-  const runManualScan = async () => {
-    const result = await runScan().catch((e) => ({
-      ok: false as const,
-      error: e instanceof Error ? e.message : String(e),
-    }));
-    await reload();
-    setScanNote(
-      !result.ok
-        ? result.error
-        : result.added > 0
-          ? `Added ${result.added} from ${result.scanned} message${result.scanned === 1 ? '' : 's'}.`
-          : `No new expenses in the last ${result.scanned} message${result.scanned === 1 ? '' : 's'}.`
-    );
-  };
 
   const usedCategories = useMemo(
     () => CATEGORIES.filter((c) => expenses.some((e) => e.category === c && e.is_expense === 1)),
@@ -128,40 +109,7 @@ export default function TimelineScreen() {
         stickySectionHeadersEnabled={false}
         ListHeaderComponent={
           <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <ThemedText type="title">Timeline</ThemedText>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Scan the last 90 days of messages for expenses"
-                disabled={scan.running}
-                style={({ pressed }) => [
-                  styles.scanBtn,
-                  { backgroundColor: theme.surfaceHigh },
-                  pressed && styles.scanBtnPressed,
-                ]}
-                onPress={() => void runManualScan()}>
-                <LineIcon name="refresh" size={15} color={theme.accent} />
-                <ThemedText type="smallBold" themeColor="textMuted">
-                  {scan.running ? 'Scanning' : 'Scan'}
-                </ThemedText>
-              </Pressable>
-            </View>
-            {scan.running && (
-              <View style={styles.progress}>
-                <ProgressBar
-                  pct={scan.total === 0 ? 4 : (scan.done / scan.total) * 100}
-                  color={theme.accent}
-                />
-                <ThemedText type="small" themeColor="textMuted" style={styles.progressText}>
-                  Reading messages {scan.done} of {scan.total} · {scan.added} added
-                </ThemedText>
-              </View>
-            )}
-            {scanNote !== null && (
-              <ThemedText type="small" themeColor="textSecondary">
-                {scanNote}
-              </ThemedText>
-            )}
+            <ThemedText type="title">Timeline</ThemedText>
 
             <MonthBar monthMs={monthMs} onChange={setMonthMs} />
 
@@ -308,17 +256,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
-  scanBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 7,
-    paddingHorizontal: Spacing.two + 2,
-    borderRadius: Radii.md,
-  },
-  scanBtnPressed: { opacity: 0.6 },
-  progress: { gap: Spacing.two - 4 },
-  progressText: { marginTop: -2 },
   hero: {
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,

@@ -151,6 +151,7 @@ export function IconWell({ category, size = 40 }: { category: Category; size?: n
 
 const LINE_GLYPHS: Record<string, ReactNode> = {
   doc: <Path d="M6 3h8l4 4v14H6V3Z M14 3v4h4" />,
+  check: <Path d="M5 12.8 9.8 17.5 19 6.8" />,
   chart: <Path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />,
   message: <Path d="M4 5h16v11H9l-5 4V5Z" />,
   gear: (

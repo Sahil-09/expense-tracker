@@ -5,11 +5,6 @@ import ExpenseSms from '@/modules/expense-sms/src/ExpenseSmsModule';
 import { ingestSms, reclassifyPending } from './db';
 import { notifyExpense } from './notify';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** How far back the manual scan reaches. */
-export const BACKFILL_DAYS = 90;
-
 export const isAndroid = Platform.OS === 'android';
 
 /**
@@ -88,11 +83,11 @@ export function onScanState(fn: (s: ScanState) => void): () => void {
  * The one way to start a scan. Auto-start on launch, the first-run gate and the two
  * scan buttons all go through here, so they cannot overlap and each gets progress.
  */
-export async function runScan(days: number = BACKFILL_DAYS): Promise<ScanResult> {
+export async function runScan(): Promise<ScanResult> {
   if (scanState.running) return { ok: true, ...NOOP };
   setScanState({ running: true, done: 0, total: 0, added: 0 });
   try {
-    const result = await scanInbox(days, (done, total) => setScanState({ done, total }));
+    const result = await scanInbox((done, total) => setScanState({ done, total }));
     setScanState({ running: false, added: result.ok ? result.added : 0 });
     return result;
   } catch (e) {
@@ -114,15 +109,18 @@ export type ScanSummary = {
 export type ScanResult = ({ ok: true } & ScanSummary) | { ok: false; error: string };
 
 /**
- * Walks the inbox newest-first and feeds every message through the normal ingest path.
- * `scanned` matters as much as `added`: scanned 0 means we read nothing, while
+ * Walks the entire inbox newest-first and feeds every message through the normal ingest
+ * path. `scanned` matters as much as `added`: scanned 0 means we read nothing, while
  * scanned > 0 with added 0 means the parser rejected everything.
  *
- * `onProgress` fires per message so a screen can show a moving bar; a 90-day scan is long
+ * The whole inbox, not a recent window: an expense from fourteen months ago is still an
+ * expense, and the months with no messages cost nothing but a parse. Dedupe makes
+ * re-scanning free of side effects, so there is no reason to hide older history.
+ *
+ * `onProgress` fires per message so a screen can show a moving bar; a full inbox is long
  * enough that a spinner alone reads as a hang.
  */
 export async function scanInbox(
-  days: number,
   onProgress?: (done: number, total: number) => void
 ): Promise<ScanResult> {
   if (!isAndroid) return { ok: false, error: 'Inbox reading is Android only.' };
@@ -138,7 +136,9 @@ export async function scanInbox(
 
   let messages;
   try {
-    messages = await ExpenseSms!.readInbox(Date.now() - days * DAY_MS);
+    // sinceMs 0 is the whole inbox: the native query is `date >= ?`, and no SMS has a
+    // non-positive timestamp.
+    messages = await ExpenseSms!.readInbox(0);
   } catch (e) {
     return { ok: false, error: `Inbox read failed: ${e instanceof Error ? e.message : String(e)}` };
   }

@@ -75,6 +75,8 @@ other file.
 - The iOS share extension is flagged experimental by Expo.
 - Some OEMs suppress `SMS_RECEIVED` for non-default SMS apps. If live capture is silent on
   your phone, use **Settings → Scan inbox now**, which reads history directly.
-- A full 90-day inbox scan runs inserts on the JS thread and can take a few seconds.
+- A full inbox scan runs inserts on the JS thread and can take a few seconds. It happens on
+  every launch, so a large inbox costs that delay each cold start until most messages are
+  duplicates.
 - `expo lint` reports one pre-existing error in `src/hooks/use-color-scheme.web.ts`, which
   came with the Expo template and is untouched by this app.

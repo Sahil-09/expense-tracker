@@ -320,6 +320,53 @@ export async function setExpense(
   else await addExclusion(merchant);
 }
 
+/** Just enough of a row to let the user tell two same-merger transactions apart. */
+export type SimilarExpense = {
+  id: number;
+  merchant: string;
+  amount_paise: number;
+  category: Category;
+  txn_at: number;
+};
+
+/**
+ * Counted rows elsewhere in history that share this merchant.
+ *
+ * Compared on the same normalised key <setExpense> writes to `exclusions`, so "similar"
+ * means exactly the merchant the app is about to stop logging forever. Matching on
+ * category instead would sweep in unrelated shops that merely filed the same way.
+ *
+ * The merchant is normalised in JS rather than SQL because only the JS key knows the
+ * rules; dues are already out of the totals, so `is_expense = 1` leaves them alone.
+ * `raw_sms` is deliberately not selected — the picker shows amount, category and date,
+ * and pulling every message body in history to do it would be a pointless transfer.
+ */
+export async function listSimilarExpenses(merchant: string): Promise<SimilarExpense[]> {
+  const d = await getDb();
+  const rows = await d.getAllAsync<SimilarExpense & { merchant: string | null }>(
+    'SELECT id, merchant, amount_paise, category, txn_at FROM expenses ' +
+      'WHERE is_expense = 1 AND merchant IS NOT NULL'
+  );
+  const key = exclusionKey(merchant);
+  return rows.filter((r) => exclusionKey(r.merchant as string) === key);
+}
+
+/**
+ * Takes a batch of rows out of the totals in one statement.
+ *
+ * One statement, so a batch cannot half-apply if the app is killed midway, and one
+ * round trip instead of one per row. No merchant memory is written here: the caller has
+ * already been through <setExpense>, which is what teaches the app to skip them.
+ */
+export async function markNotExpenses(ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  const d = await getDb();
+  await d.runAsync(
+    `UPDATE expenses SET is_expense = 0 WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ...ids
+  );
+}
+
 export async function clearAll(): Promise<void> {
   const d = await getDb();
   await d.runAsync('DELETE FROM expenses');

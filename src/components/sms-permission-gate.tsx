@@ -9,7 +9,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { getPref, setPref } from '@/lib/db';
 import { ensureNotificationsReady } from '@/lib/notify';
 import {
-  BACKFILL_DAYS,
   hasSmsPermission,
   isAndroid,
   nativeModuleMissing,
@@ -83,10 +82,10 @@ export function SmsPermissionGate() {
 
         <ThemedText type="body" themeColor="textSecondary" style={styles.body}>
           Expense Tracker turns your bank and payment messages into expenses. It asks for two
-          things: permission to read your messages, so the last {BACKFILL_DAYS} days can be
-          imported, and permission to be told when a new one arrives, so spending is logged
-          the moment it happens instead of waiting for you to open the app. It also asks to post
-          notifications, so each new expense can show what is left of this month&rsquo;s budget.
+          things: permission to read your messages, so everything already sitting in your inbox
+          can be imported, and permission to be told when a new one arrives, so spending is
+          logged the moment it happens instead of waiting for you to open the app. It also asks
+          to post notifications, so each new expense can show what is left of this month&rsquo;s budget.
         </ThemedText>
 
         <View style={[styles.note, { backgroundColor: theme.surface, borderColor: theme.border }]}>

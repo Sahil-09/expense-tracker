@@ -4,17 +4,18 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { Button, Card, Label, LineIcon, tint } from '@/components/ui-kit';
+import { Button, Card, Label, LineIcon, ProgressBar, tint } from '@/components/ui-kit';
 import Constants from 'expo-constants';
 import { useMonthlyTotals } from '@/hooks/use-data';
 import { useTheme, useThemeMode, type ThemeMode } from '@/hooks/use-theme';
 import {
-  BACKFILL_DAYS,
   hasSmsPermission,
   isAndroid,
   nativeModuleMissing,
+  onScanState,
   requestSmsPermission,
   runScan,
+  type ScanState,
 } from '@/lib/sms';
 import { clearAll, countExpenses } from '@/lib/db';
 import { formatINR } from '@/lib/money';
@@ -29,8 +30,12 @@ const MODES: { value: ThemeMode; label: string; icon: string }[] = [
 export default function SettingsScreen() {
   const [count, setCount] = useState<number | null>(null);
   const [status, setStatus] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [granted, setGranted] = useState<boolean | null>(null);
+  // The one place scan progress is shown. The Timeline deliberately does not watch this:
+  // a launch auto-scan runs with nobody watching, and a moving bar they did not start
+  // just looks like something is wrong.
+  const [scan, setScan] = useState<ScanState>({ running: false, done: 0, total: 0, added: 0 });
+  useEffect(() => onScanState(setScan), []);
   const totals = useMonthlyTotals(12);
   const lifetime = totals.reduce((sum, t) => sum + t.total, 0);
   const { mode, setMode } = useThemeMode();
@@ -43,17 +48,15 @@ export default function SettingsScreen() {
   }, []);
 
 
-  const scan = async () => {
+  const doScan = async () => {
     if (!hasSmsPermission()) await requestSmsPermission();
-    setBusy(true);
     setStatus(null);
-    // Without this, any thrown error escapes `void scan()` as an unhandled rejection
+    // Without this, any thrown error escapes `void doScan()` as an unhandled rejection
     // and pops a red box instead of a message the user can read.
-    const result = await runScan(BACKFILL_DAYS).catch((e) => ({
+    const result = await runScan().catch((e) => ({
       ok: false as const,
       error: e instanceof Error ? e.message : String(e),
     }));
-    setBusy(false);
     setGranted(await hasSmsPermission());
 
     if (!result.ok) {
@@ -112,15 +115,26 @@ export default function SettingsScreen() {
                 value={granted === null ? '…' : granted ? 'Granted' : 'Not granted'}
               />
               <ThemedText type="small" themeColor="textMuted">
-                Reads the last {BACKFILL_DAYS} days and logs anything that looks like a payment.
+                Reads your whole inbox and logs anything that looks like a payment.
                 Income, OTPs and promotions are ignored.
               </ThemedText>
               <Button
                 icon="refresh"
-                label={busy ? 'Scanning…' : 'Scan inbox now'}
-                disabled={busy}
-                onPress={() => void scan()}
+                label={scan.running ? 'Scanning…' : 'Scan inbox now'}
+                disabled={scan.running}
+                onPress={() => void doScan()}
               />
+              {scan.running && (
+                <View style={styles.progress}>
+                  <ProgressBar
+                    pct={scan.total === 0 ? 4 : (scan.done / scan.total) * 100}
+                    color={theme.accent}
+                  />
+                  <ThemedText type="small" themeColor="textMuted">
+                    Reading messages {scan.done} of {scan.total} · {scan.added} added
+                  </ThemedText>
+                </View>
+              )}
             </>
           ) : (
             <ThemedText type="small" themeColor="textMuted">
@@ -236,6 +250,7 @@ const styles = StyleSheet.create({
   },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   labelRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  progress: { gap: Spacing.two - 4 },
   segInner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   pill: { borderRadius: Radii.pill, paddingHorizontal: Spacing.two + 2, paddingVertical: 3 },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two + 2 },
