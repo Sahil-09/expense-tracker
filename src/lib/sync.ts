@@ -366,17 +366,62 @@ export async function register(
   return error;
 }
 
-/** No confirmation either way: the server answers 204 for known and unknown addresses alike. */
+/**
+ * Asks the server to email a reset code.
+ *
+ * No confirmation either way, and the UI says the same thing either way: the server
+ * answers 200 for known and unknown addresses alike, so anything more specific would say
+ * which emails have an account.
+ */
+export async function forgotPassword(email: string): Promise<string | null> {
+  const res = await postJson('/auth/forgot-password', { email });
+  if (typeof res === 'string') return res;
+  if (!res.ok) return `The server said ${res.status}.`;
+  return null;
+}
+
+/**
+ * Proves the emailed code and sets a new password. 204 is the whole success signal.
+ *
+ * Not postAuth, on purpose: that persists the credentials and hands back tokens, and a
+ * reset must sign nobody in — the person still has to type the new password in themselves.
+ * Note also there is no body to read here, which postAuth would choke on.
+ */
 export async function resetPassword(
   email: string,
   code: string,
   newPassword: string
 ): Promise<string | null> {
-  return postAuth('/auth/reset-password', { email, code, newPassword });
+  const res = await postJson('/auth/reset-password', { email, code, newPassword });
+  if (typeof res === 'string') return res;
+  if (res.status === 401) return 'That code is not valid or has expired.';
+  if (!res.ok) return `The server said ${res.status}.`;
+  return null;
 }
 
 /**
- * One place for the three account calls, because they differ only in path and body.
+ * The fetch behind the account calls that hand back no tokens.
+ *
+ * Returns the response, or a sentence worth showing when the server is unreachable or
+ * none is configured. Separate from postAuth because these two must not touch prefs.
+ */
+async function postJson(path: string, body: Record<string, unknown>): Promise<Response | string> {
+  const base = serverUrl();
+  if (!base) return 'No sync server configured. Set EXPO_PUBLIC_SYNC_URL.';
+
+  try {
+    return await fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
+/**
+ * One place for the calls that sign someone in, because they differ only in path and body.
  *
  * Returns null on success, or a sentence worth showing. The password is only persisted by
  * signIn — a half-finished register should not leave a password sitting in prefs for an

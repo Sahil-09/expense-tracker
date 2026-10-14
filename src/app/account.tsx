@@ -7,7 +7,15 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Button, Card, Label, LineIcon } from '@/components/ui-kit';
 import { useTheme } from '@/hooks/use-theme';
-import { hasBackedUp, markBackedUp, register, resetPassword, serverUrl, signIn } from '@/lib/sync';
+import {
+  forgotPassword,
+  hasBackedUp,
+  markBackedUp,
+  register,
+  resetPassword,
+  serverUrl,
+  signIn,
+} from '@/lib/sync';
 import { setPref } from '@/lib/db';
 import { BottomTabInset, MaxContentWidth, Radii, Spacing } from '@/constants/theme';
 
@@ -61,6 +69,19 @@ export default function AccountScreen() {
   const done = async () => {
     await setPref('onboarded', '1');
     router.replace('/');
+  };
+
+  /** Emails a reset code. Shares `busy` so a send cannot overlap a submit, or itself. */
+  const sendCode = async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      setNote(
+        (await forgotPassword(email.trim())) ?? 'If that address has an account, a code is on its way.'
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
   const submit = async () => {
@@ -165,12 +186,23 @@ export default function AccountScreen() {
           )}
           {mode === 'reset' && (
             <ThemedText type="small" themeColor="textMuted" style={styles.hint}>
-              Ask whoever runs the server for the reset code. It is not the same as the
-              signup code.
+              Tap Send code and an 8-digit code goes out to the address above. It is not the
+              same as the signup code.
             </ThemedText>
           )}
 
           <Field label="Email" value={email} onChange={setEmail} auto="email" />
+
+          {mode === 'reset' && (
+            // Disabled on an empty box and while anything is in flight, or a lost double-tap
+            // mails a second code and the first one they read is already stale.
+            <Button
+              label="Send code"
+              icon="message"
+              disabled={email.trim() === '' || busy}
+              onPress={() => void sendCode()}
+            />
+          )}
 
           <Field
             label={mode === 'reset' ? 'New password' : 'Password'}
