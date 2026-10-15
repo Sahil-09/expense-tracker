@@ -370,7 +370,7 @@ describe('parseSms - accepts spends', () => {
 describe('categorize', () => {
   it.each([
     ['SWIGGY ORDER', 'Food'],
-    ['Zomato', 'Groceries'],
+    ['Zomato', 'Food'],
     ['Uber India', 'Transport'],
     ['AMAZON', 'Shopping'],
     ['Airtel recharge', 'Bills'],

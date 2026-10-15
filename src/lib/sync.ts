@@ -61,6 +61,13 @@ const MAX_PAGES = 20;
 export type SyncState = {
   configured: boolean;
   running: boolean;
+  /**
+   * The account this device is signed in as, or '' when signed out. Settings must branch
+   * on this and not on `lastSyncAt`: "has a sync ever succeeded" is not "is signed in".
+   * It is false while a first sync is still in flight, and it stays true after signing
+   * out, because `sync_last_at` is history and outlives the credentials.
+   */
+  email: string;
   lastSyncAt: number | null;
   lastError: string | null;
   backoffUntil: number;
@@ -70,6 +77,7 @@ export type SyncState = {
 const state: SyncState = {
   configured: false,
   running: false,
+  email: '',
   lastSyncAt: null,
   lastError: null,
   backoffUntil: 0,
@@ -104,6 +112,7 @@ export function serverUrl(): string | null {
 export async function refreshState(): Promise<SyncState> {
   patch({
     configured: serverUrl() !== null,
+    email: (await getPref(PREFS.email)) ?? '',
     lastSyncAt: Number((await getPref(PREFS.lastSync)) ?? 0) || null,
     lastError: await getPref(PREFS.lastError),
     backoffUntil: Number((await getPref(PREFS.backoffUntil)) ?? 0),
@@ -213,7 +222,11 @@ async function run(): Promise<SyncResult> {
         }),
       });
 
-    const res = await post(await getPref(PREFS.cursor), true);
+    // A missing cursor is null and a stale/empty one (left behind by signOut on an old
+    // build, or a hand-edited pref) is not a valid ISO timestamp: normalize before sending
+    // so the server never rejects the first post-login sync with a 400.
+    const cursor = await getPref(PREFS.cursor);
+    const res = await post(cursor && cursor.trim() ? cursor : null, true);
 
     if (res.status === 401) {
       // The access token outlived its 15 minutes and the stored one is stale. Drop it so
@@ -222,7 +235,7 @@ async function run(): Promise<SyncResult> {
       await setPref(PREFS.accessToken, '');
       throw new Error('Session expired — will sign in again next time.');
     }
-    if (!res.ok) throw new Error(`Server said ${res.status}`);
+    if (!res.ok) throw new Error(await serverError(res));
 
     let body = (await res.json()) as PullBody;
     await applyPull(body);
@@ -268,6 +281,24 @@ async function run(): Promise<SyncResult> {
   }
 }
 
+/**
+ * The server names the field it rejected: {"message":["expenses.0.dedupeKey must be a
+ * string"]}. Throwing the status on its own turns that into "Server said 400", which is
+ * undiagnosable from the phone and then hides behind an hour of backoff. Falls back to the
+ * status when the response carries no JSON body.
+ */
+async function serverError(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { message?: string | string[] };
+    const m = body.message;
+    if (Array.isArray(m) && m.length > 0) return m.join(' ');
+    if (typeof m === 'string' && m !== '') return m;
+  } catch {
+    /* no JSON body to read */
+  }
+  return `Server said ${res.status}`;
+}
+
 async function done(r: SyncResult): Promise<SyncResult> {
   patch({ running: false, lastError: r.error ?? null });
   return r;
@@ -295,7 +326,8 @@ async function accessToken(base: string, email: string, password: string, me: st
       platform: Platform.OS,
     }),
   });
-  if (!res.ok) throw new Error(res.status === 401 ? 'Wrong email or password' : `Login failed (${res.status})`);
+  if (!res.ok)
+    throw new Error(res.status === 401 ? 'Wrong email or password' : await serverError(res));
 
   const body = (await res.json()) as { accessToken: string; expiresIn: number };
   await setPref(PREFS.accessToken, body.accessToken);
@@ -327,15 +359,48 @@ export function syncInBackground(): void {
 export async function signIn(email: string, password: string): Promise<string | null> {
   const base = serverUrl();
   if (!base) return 'No sync server configured. Set EXPO_PUBLIC_SYNC_URL.';
+  // Inside the try, like every other database read below: one that throws must come back as
+  // a sentence, because the caller has no catch and a rejection is a button that does nothing.
   try {
+    const me = await deviceId();
+    const res = await fetch(`${base}/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password,
+        deviceId: me,
+        deviceName: (await getPref(PREFS.deviceName)) ?? deviceDefaultName(),
+        platform: Platform.OS,
+      }),
+    });
+    // The credentials are checked at this endpoint, not later by the sync engine: a 200
+    // here is the whole answer, even if reading its body or the follow-up sync fails.
+    if (res.status === 401) return 'Wrong email or password';
+    if (!res.ok) return serverError(res);
+
+    let tokens: { accessToken?: string; expiresIn?: number; deviceId?: string } = {};
+    try {
+      tokens = await res.json();
+    } catch {
+      /* response may carry no body; the HTTP status already said success */
+    }
     await setPref(PREFS.email, email);
     await setPref(PREFS.password, password);
-    await setPref(PREFS.accessToken, '');
+    if (tokens.deviceId) await setPref(PREFS.deviceId, tokens.deviceId);
+    if (tokens.accessToken) await setPref(PREFS.accessToken, tokens.accessToken);
+    await setPref(
+      PREFS.accessExpiresAt,
+      String(Date.now() + (Number(tokens.expiresIn) || 0) * 1000)
+    );
+    await setPref(PREFS.cursor, '');
+    await setPref(PREFS.pushed, '0');
     await setPref(PREFS.failures, '0');
     await setPref(PREFS.backoffUntil, '0');
-    patch({ configured: true, lastError: null });
-    const result = await syncNow();
-    return result.ok ? null : (result.error ?? 'Sync failed');
+    patch({ configured: true, lastError: null, email });
+    // Sync is best-effort; it must not overturn a successful login.
+    void syncNow();
+    return null;
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
   }
@@ -351,12 +416,13 @@ export async function register(
   code: string
 ): Promise<string | null> {
   // The device details go with the signup, or this device lands in the server's device
-  // list as "Phone / unknown" until the user happens to sign in a second time.
+  // list as "Phone / unknown" until the user happens to sign in a second time. They are
+  // filled in by postAuth, which reads them inside its own try: reading them here would be
+  // outside any error handler, and the screen has no catch.
   const error = await postAuth('/auth/register', {
     email,
     password,
     code,
-    deviceName: (await getPref(PREFS.deviceName)) ?? deviceDefaultName(),
     platform: Platform.OS,
   });
   // Signup does not push the existing history on its own: a phone that has been logging
@@ -435,7 +501,10 @@ async function postAuth(path: string, body: Record<string, unknown>): Promise<st
     const res = await fetch(`${base}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        ...body,
+        deviceName: (await getPref(PREFS.deviceName)) ?? deviceDefaultName(),
+      }),
     });
     if (res.status === 401) return 'That code is not valid.';
     if (res.status === 409) return 'That email is already registered.';
@@ -454,7 +523,7 @@ async function postAuth(path: string, body: Record<string, unknown>): Promise<st
     await setPref(PREFS.accessExpiresAt, String(Date.now() + tokens.expiresIn * 1000));
     await setPref(PREFS.failures, '0');
     await setPref(PREFS.backoffUntil, '0');
-    patch({ configured: true, lastError: null });
+    patch({ configured: true, lastError: null, email: String(body.email) });
     return null;
   } catch (e) {
     return e instanceof Error ? e.message : String(e);
@@ -468,7 +537,7 @@ export async function signOut(): Promise<void> {
   await setPref(PREFS.cursor, '');
   await setPref(PREFS.pushed, '0');
   await setPref(PREFS.lastError, '');
-  patch({ configured: false, lastError: null, lastSyncAt: null });
+  patch({ configured: false, lastError: null, lastSyncAt: null, email: '' });
 }
 
 /** Never blocks a screen; used from the root layout on foreground. */

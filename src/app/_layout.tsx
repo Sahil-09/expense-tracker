@@ -22,7 +22,8 @@ import { AppState, BackHandler, View } from 'react-native';
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { SmsPermissionGate } from '@/components/sms-permission-gate';
 import { ThemeModeProvider, useTheme, useThemeMode } from '@/hooks/use-theme';
-import { hasSmsPermission, runScan, startLiveCapture } from '@/lib/sms';
+import { isAndroid, startLiveCapture } from '@/lib/sms';
+import { ensureNotificationsReady } from '@/lib/notify';
 import { getPref } from '@/lib/db';
 import { serverUrl, startBackgroundSync } from '@/lib/sync';
 
@@ -127,6 +128,11 @@ function NavigationShell() {
   // App-wide, so a bank SMS is captured no matter which tab is open. Also drains
   // anything the manifest receiver queued while the app was closed.
   useEffect(() => {
+    // Ensure the HIGH-importance "expenses" channel (and permission) exists before any
+    // live capture can fire a notification. Done here, not only in <SmsPermissionGate>,
+    // because permissions can be pre-granted (or granted in Settings), which bypasses the
+    // gate and leaves notifications with no channel to post on.
+    if (isAndroid) void ensureNotificationsReady();
     startLiveCapture();
   }, []);
 

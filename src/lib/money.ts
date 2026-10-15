@@ -16,6 +16,36 @@ export function formatINR(paise: number): string {
   return INR.format(paise / 100);
 }
 
+/**
+ * Worklet-safe twin of `formatINR`, for the animated money roll.
+ *
+ * `Intl.NumberFormat` does not exist on the UI thread, so the counter cannot use it. This
+ * has to stay byte-identical to `formatINR` — Indian grouping, the two decimals Intl
+ * always emits, the sign position — or the number visibly changes format the instant the
+ * animation settles. `money.test.ts` asserts that equivalence across a spread of values.
+ */
+export function formatINRWorklet(paise: number): string {
+  'worklet';
+  const negative = paise < 0;
+  const abs = Math.abs(Math.round(paise));
+  const rupees = Math.floor(abs / 100);
+  const frac = abs % 100;
+
+  // Indian grouping: last three digits, then pairs. `1,23,456` rather than `123,456`.
+  const digits = String(rupees);
+  let whole: string;
+  if (digits.length <= 3) {
+    whole = digits;
+  } else {
+    const last3 = digits.slice(-3);
+    const rest = digits.slice(0, -3);
+    whole = rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + last3;
+  }
+
+  const tail = frac < 10 ? '0' + frac : String(frac);
+  return `${negative ? '-' : ''}₹${whole}.${tail}`;
+}
+
 /** Start of the month containing `at`, as a local-midnight epoch ms. */
 export function monthStart(at: number): number {
   const d = new Date(at);

@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AnimatedMoney } from '@/components/animated-money';
 import { ColumnBars, Donut, Legend } from '@/components/charts';
 import { MonthBar } from '@/components/month-bar';
 import { ThemedText } from '@/components/themed-text';
@@ -44,7 +45,7 @@ export default function InsightsScreen() {
   // The Timeline already renders a category filtered, so drilling down is a navigation
   // with a param rather than a second list screen to keep in sync.
   const openCategory = (category: Category) => {
-    router.push({ pathname: '/', params: { filter: category } });
+    router.push({ pathname: '/', params: { filter: category, monthMs: String(monthMs) } });
   };
 
   return (
@@ -77,8 +78,8 @@ export default function InsightsScreen() {
           <Donut slices={byCategory} />
 
           <View style={styles.stats}>
-            <Stat label="Spent" value={formatINR(total)} />
-            <Stat label="Projected" value={formatINR(projected)} />
+            <Stat label="Spent" value={<AnimatedMoney paise={total} type="small" />} />
+            <Stat label="Projected" value={<AnimatedMoney paise={projected} type="small" />} />
             <Stat
               label="Txns"
               value={String(byCategory.reduce((s, c) => s + (c.n ?? 0), 0))}
@@ -128,11 +129,15 @@ export default function InsightsScreen() {
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <View style={styles.stat}>
       <Label>{label}</Label>
-      <ThemedText type="smallBold">{value}</ThemedText>
+      {typeof value === 'string' ? (
+        <ThemedText type="smallBold">{value}</ThemedText>
+      ) : (
+        value
+      )}
     </View>
   );
 }

@@ -1,8 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, SectionList, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AnimatedMoney } from '@/components/animated-money';
 import { MonthBar } from '@/components/month-bar';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -21,13 +23,25 @@ export default function TimelineScreen() {
   const router = useRouter();
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const [monthMs, setMonthMs] = useState(() => monthStart(Date.now()));
-  // Derived from the route rather than local state, so Insights can drill in with a
-  // param, chips still toggle, and tapping the same category twice behaves.
-  const { filter: filterParam } = useLocalSearchParams<{ filter?: string }>();
+  const reducedMotion = useReducedMotion();
+  const { filter: filterParam, monthMs: monthMsParam } = useLocalSearchParams<{ filter?: string; monthMs?: string }>();
   const filter = CATEGORIES.includes(filterParam as Category) ? (filterParam as Category) : null;
   const setFilter = (next: Category | null) => {
     router.setParams({ filter: next ?? undefined });
+  };
+  // Per mount, not once per JS process: an app left open across a month boundary must still
+  // land on the new month when this screen comes back. The lazy initializer is also what
+  // keeps Date.now() out of the render body, which the compiler lint rejects.
+  const [fallbackMonthMs] = useState(() => monthStart(Date.now()));
+  const monthMs = useMemo(() => {
+    if (monthMsParam) {
+      const parsed = Number(monthMsParam);
+      if (!isNaN(parsed)) return parsed;
+    }
+    return fallbackMonthMs;
+  }, [monthMsParam, fallbackMonthMs]);
+  const setMonthMs = (next: number) => {
+    router.setParams({ monthMs: String(next) });
   };
   const { expenses, total, reload } = useMonthData(monthMs);
   const { budgets } = useBudgets();
@@ -36,6 +50,17 @@ export default function TimelineScreen() {
   // Nothing to kick off here either: the launch auto-scan is the only trigger, so a scan
   // can be running with nobody having pressed anything.
   useEffect(() => onCaptured(() => void reload()), [reload]);
+
+  // Ids as of the last committed render, tagged with the month they belong to. The list
+  // virtualises, so cells unmount and remount as they scroll past the window; an
+  // unconditional `entering` would replay on every one of those and leave rows half-lit
+  // mid-scroll. Null until the first paint, and stale for a different month, so both the
+  // initial load and a month switch arrive at full opacity rather than fading a whole
+  // month in.
+  const seen = useRef<{ month: number; ids: Set<string> } | null>(null);
+  useEffect(() => {
+    seen.current = { month: monthMs, ids: new Set(expenses.map((e) => String(e.id))) };
+  }, [expenses, monthMs]);
 
   const usedCategories = useMemo(
     () => CATEGORIES.filter((c) => expenses.some((e) => e.category === c && e.is_expense === 1)),
@@ -113,50 +138,55 @@ export default function TimelineScreen() {
 
             <MonthBar monthMs={monthMs} onChange={setMonthMs} />
 
-            <View style={[styles.hero, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-              <Label>{filter ? `${filter} only` : 'Spent this month'}</Label>
-              <ThemedText type="hero">{formatINR(visibleTotal)}</ThemedText>
-              {filter === null && (
-                <View style={styles.heroMeta}>
-                  <ThemedText type="small" themeColor="textMuted">
-                    {dayCount === 0
-                      ? 'No days logged yet'
-                      : `${dayCount} day${dayCount === 1 ? '' : 's'} · ₹${Math.round(visibleTotal / dayCount / 100)} avg`}
-                  </ThemedText>
-                  {target > 0 && (
+            <Animated.View
+              key={monthMs}
+              entering={reducedMotion ? undefined : FadeIn.duration(180)}
+              style={styles.heroGroup}>
+              <View style={[styles.hero, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Label>{filter ? `${filter} only` : 'Spent this month'}</Label>
+                <AnimatedMoney paise={visibleTotal} type="hero" />
+                {filter === null && (
+                  <View style={styles.heroMeta}>
                     <ThemedText type="small" themeColor="textMuted">
-                      {Math.round((visibleTotal / target) * 100)}% of ₹{Math.round(target / 100)}
+                      {dayCount === 0
+                        ? 'No days logged yet'
+                        : `${dayCount} day${dayCount === 1 ? '' : 's'} · ₹${Math.round(visibleTotal / dayCount / 100)} avg`}
                     </ThemedText>
-                  )}
-                </View>
-              )}
-              {target > 0 && filter === null && (
-                <ProgressBar pct={(visibleTotal / target) * 100} color={theme.accent} />
-              )}
-              {filter !== null && (
-                <ThemedText type="small" themeColor="textMuted">
-                  {formatINR(total)} across all categories
-                </ThemedText>
-              )}
-            </View>
+                    {target > 0 && (
+                      <ThemedText type="small" themeColor="textMuted">
+                        {Math.round((visibleTotal / target) * 100)}% of ₹{Math.round(target / 100)}
+                      </ThemedText>
+                    )}
+                  </View>
+                )}
+                {target > 0 && filter === null && (
+                  <ProgressBar pct={(visibleTotal / target) * 100} color={theme.accent} />
+                )}
+                {filter !== null && (
+                  <ThemedText type="small" themeColor="textMuted">
+                    {formatINR(total)} across all categories
+                  </ThemedText>
+                )}
+              </View>
 
-            {usedCategories.length > 1 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.filters}>
-                <Chip label="All" selected={filter === null} onPress={() => setFilter(null)} />
-                {usedCategories.map((c) => (
-                  <Chip
-                    key={c}
-                    label={c}
-                    color={CATEGORY_COLORS[c]}
-                    selected={filter === c}
-                    onPress={() => setFilter(filter === c ? null : c)}
-                  />
-                ))}
-              </ScrollView>
-            )}
+              {usedCategories.length > 1 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.filters}>
+                  <Chip label="All" selected={filter === null} onPress={() => setFilter(null)} />
+                  {usedCategories.map((c) => (
+                    <Chip
+                      key={c}
+                      label={c}
+                      color={CATEGORY_COLORS[c]}
+                      selected={filter === c}
+                      onPress={() => setFilter(filter === c ? null : c)}
+                    />
+                  ))}
+                </ScrollView>
+              )}
+            </Animated.View>
           </View>
         }
         renderSectionHeader={({ section }) => (
@@ -172,7 +202,10 @@ export default function TimelineScreen() {
           const due = item.is_due === 1;
           const excluded = item.is_expense === 0;
           const tag = due ? 'Due' : excluded ? 'Not an expense' : item.category;
-          return (
+          // Opacity only, no transform or measurement: anything else makes every recycled
+          // cell re-lay-out mid-scroll, which is what actually costs frames here.
+          const isNew = seen.current?.month === monthMs && !seen.current.ids.has(String(item.id));
+          const row = (
             <Pressable
               accessibilityRole="button"
               accessibilityState={{ selected: excluded }}
@@ -222,6 +255,13 @@ export default function TimelineScreen() {
               </View>
             </Pressable>
           );
+          // The fade lives on a wrapper, not the Pressable: FadeIn always targets opacity 1,
+          // which would override rowExcluded's 0.6 on the "Not an expense" rows.
+          return (
+            <Animated.View entering={!reducedMotion && isNew ? FadeIn.duration(210) : undefined}>
+              {row}
+            </Animated.View>
+          );
         }}
         ListEmptyComponent={
           <View style={styles.empty}>
@@ -256,6 +296,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  // The header's own gap only applies between top-level children, so the hero/chips spacing
+  // has to be restated now that the cross-fade wraps both of them.
+  heroGroup: { gap: Spacing.three },
   hero: {
     borderRadius: 20,
     borderWidth: StyleSheet.hairlineWidth,

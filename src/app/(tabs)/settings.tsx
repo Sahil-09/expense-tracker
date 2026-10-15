@@ -215,9 +215,12 @@ export default function SettingsScreen() {
               No sync server configured. Set EXPO_PUBLIC_SYNC_URL in the app config and
               rebuild.
             </ThemedText>
-          ) : sync?.lastSyncAt != null ? (
+          ) : sync?.email ? (
             <>
-              <Row label="Last synced" value={new Date(sync.lastSyncAt).toLocaleString()} />
+              <Row label="Signed in as" value={sync.email} />
+              {sync.lastSyncAt != null && (
+                <Row label="Last synced" value={new Date(sync.lastSyncAt).toLocaleString()} />
+              )}
               <Row label="Server" value={serverUrl() ?? ''} />
               <Button
                 icon="refresh"

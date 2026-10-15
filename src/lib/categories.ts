@@ -8,6 +8,7 @@ export const CATEGORIES = [
   'Entertainment',
   'Transfer',
   'Rent',
+  'Date',
   'Other',
 ] as const;
 
@@ -25,6 +26,7 @@ export const CATEGORY_COLORS: Record<Category, string> = {
   Entertainment: '#EC4899',
   Transfer: '#6366F1',
   Rent: '#f16363',
+  Date: '#ff00ea',
   Other: '#94A3B8',
 };
 
@@ -52,8 +54,8 @@ export function detectKnownMerchant(text: string): string | null {
 // shortcut: that also files APPLE STORE / STARBUCKS as groceries. Add a negative lookahead
 // here if a branded store ever shows up often enough to be worth the noise.
 const RULES: readonly (readonly [Category, RegExp])[] = [
-  ['Groceries', /\b(zomato|blinkit|instamart|zepto|bigbasket|dmart|reliance fresh|grocer|kirana|vegetable|mart|store)\b/i],
-  ['Food', /\b(swiggy|restaurant|cafe|food|pizza|burger|domino|mcdonald|starbucks|chai|zaika|table|dining|bar &|bakery)\b/i],
+  ['Groceries', /\b(blinkit|instamart|zepto|bigbasket|dmart|reliance fresh|grocer|kirana|vegetable|mart|store)\b/i],
+  ['Food', /\b(zomato|swiggy|restaurant|cafe|food|pizza|burger|domino|mcdonald|starbucks|chai|zaika|table|dining|bar &|bakery)\b/i],
   ['Transport', /\b(uber|ola|rapido|metro|irctc|train|petrol|diesel|fuel|parking|toll|flight|airline|indigo|goair|taxi|auto|bus)\b/i],
   ['Shopping', /\b(amazon|flipkart|myntra|ajio|meesho|shopping|clothing|apparel|decathlon|ikea)\b/i],
   ['Bills', /\b(electric|bijli|water bill|gas bill|airtel|jio|recharge|postpaid| broadband|rent|subscription|netflix|hotstar|spotify|youtube ?premium|tax|gst|invoice|emi|loan)\b/i],

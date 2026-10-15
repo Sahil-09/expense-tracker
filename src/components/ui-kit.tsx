@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewProps } from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { Radii, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -30,6 +36,11 @@ export function Label({ children, style }: { children: ReactNode; style?: StyleP
   );
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+const PRESSED_SCALE = 0.96;
+const PRESS_DURATION = 120;
+
 export function Chip({
   label,
   selected = false,
@@ -42,9 +53,19 @@ export function Chip({
   onPress: () => void;
 }) {
   const theme = useTheme();
+  const reducedMotion = useReducedMotion();
+  const scale = useSharedValue(1);
   const tintColor = color ?? theme.accent;
+
+  // Reduced motion still gets the state change, just without the tween: dropping it entirely
+  // would leave the chip feeling dead under a finger.
+  const pressTo = (to: number) => {
+    scale.value = reducedMotion ? to : withTiming(to, { duration: PRESS_DURATION });
+  };
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+
   return (
-    <Pressable
+    <AnimatedPressable
       accessibilityRole="button"
       accessibilityLabel={`Filter by ${label}`}
       accessibilityState={{ selected }}
@@ -54,11 +75,14 @@ export function Chip({
           backgroundColor: selected ? tintColor : tint(tintColor, 0.12),
           borderColor: selected ? tintColor : tint(tintColor, 0.24),
         },
+        animated,
       ]}
+      onPressIn={() => pressTo(PRESSED_SCALE)}
+      onPressOut={() => pressTo(1)}
       onPress={onPress}>
       <View style={[styles.chipDot, { backgroundColor: selected ? '#FFFFFF' : tintColor }]} />
       <Text style={[styles.chipLabel, { color: selected ? '#FFFFFF' : tintColor }]}>{label}</Text>
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 

@@ -23,14 +23,17 @@ export function ThemedText({ style, type = 'body', themeColor, ...rest }: Themed
 
   return (
     <Text
-      style={[{ color: theme[themeColor ?? 'text'] }, styles[type], style]}
+      style={[{ color: theme[themeColor ?? 'text'] }, textStyles[type], style]}
       {...rest}
     />
   );
 }
 
-/** Sizes, weights and tracking are the Stitch `typography` tokens, 1:1. */
-const styles = StyleSheet.create({
+/** Sizes, weights and tracking are the Stitch `typography` tokens, 1:1.
+ *
+ * Exported so <AnimatedMoney> can style its TextInput from the same scale instead of
+ * keeping a second copy that would drift. */
+export const textStyles = StyleSheet.create({
   body: { ...face(400), fontSize: 16, lineHeight: 24, letterSpacing: -0.16 },
   title: { ...face(600), fontSize: 24, lineHeight: 32, letterSpacing: -0.48 },
   subtitle: { ...face(600), fontSize: 20, lineHeight: 28, letterSpacing: -0.3 },
