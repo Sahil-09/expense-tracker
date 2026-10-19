@@ -9,6 +9,7 @@ import { Card, Label, ProgressBar } from '@/components/ui-kit';
 import { CATEGORIES, CATEGORY_COLORS, type Category } from '@/lib/categories';
 import { useBudgets, useMonthData } from '@/hooks/use-data';
 import { setBudget } from '@/lib/db';
+import { budgetFieldText } from '@/lib/budget';
 import { formatINR, monthStart } from '@/lib/money';
 import { useTheme } from '@/hooks/use-theme';
 import { BottomTabInset, MaxContentWidth, Radii, Spacing } from '@/constants/theme';
@@ -19,6 +20,17 @@ export default function BudgetsScreen() {
   const { byCategory, total, reload: reloadMonth } = useMonthData(monthMs);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
+
+  /**
+   * What each field shows, keyed by category.
+   *
+   * The field is controlled rather than using `defaultValue`, because Fabric pushes the
+   * `text` prop into the native input on every render: an uncontrolled field whose
+   * `defaultValue` is empty gets its text wiped to '' by a re-render, and the wipe is then
+   * saved as a zero budget - so a category that already had a limit starts reading
+   * "not set". Keeping the text in state means a re-render cannot touch it.
+   */
+  const [drafts, setDrafts] = useState<Partial<Record<Category, string>>>({});
 
   const budgetFor = (c: Category) => budgets.find((b) => b.category === c)?.monthly_paise ?? 0;
   const spentFor = (c: Category) => byCategory.find((b) => b.category === c)?.total ?? 0;
@@ -64,6 +76,7 @@ export default function BudgetsScreen() {
           const spent = spentFor(c);
           const isOver = budget > 0 && spent > budget;
           const color = isOver ? theme.danger : CATEGORY_COLORS[c];
+          const shown = budgetFieldText(drafts[c], budget);
 
           return (
             <Card key={c}>
@@ -97,10 +110,21 @@ export default function BudgetsScreen() {
                     },
                   ]}
                   keyboardType="number-pad"
-                  defaultValue={budget > 0 ? String(budget / 100) : ''}
+                  value={shown}
                   placeholder="not set"
                   placeholderTextColor={theme.textMuted}
-                  onEndEditing={(e) => void save(c, e.nativeEvent.text)}
+                  onChangeText={(text) => setDrafts((d) => ({ ...d, [c]: text }))}
+                  onEndEditing={() => {
+                    // Save the value the field actually shows (React state), not the native
+                    // text, so a mid-edit re-render cannot persist a stale value.
+                    void save(c, shown).then(() => {
+                      setDrafts((d) => {
+                        const next = { ...d };
+                        delete next[c];
+                        return next;
+                      });
+                    });
+                  }}
                 />
               </View>
             </Card>

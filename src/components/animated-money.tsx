@@ -84,7 +84,10 @@ export function AnimatedMoney({
       accessible
       accessibilityLabel={formatINR(paise)}
       animatedProps={animatedProps}
-      style={[{ color: theme.text }, TYPE_STYLE[type]]}
+      // Android gives TextInput default vertical padding, which pushes its digits a few dp
+      // below a sibling <Text> on the same line. Zero it only at the small scale where a
+      // stat row sits beside a plain <Text>; the hero/amount scales keep their own rhythm.
+      style={[{ color: theme.text, padding: type === 'small' ? 0 : undefined }, TYPE_STYLE[type]]}
     />
   );
 }

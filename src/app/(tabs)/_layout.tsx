@@ -1,31 +1,41 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
 import { tint } from '@/components/ui-kit';
-import { useTheme } from '@/hooks/use-theme';
+import { useTheme, useThemeMode } from '@/hooks/use-theme';
 
 export default function TabLayout() {
   const theme = useTheme();
+  const { isDark } = useThemeMode();
 
   return (
     <NativeTabs
       backgroundColor={theme.surface}
       iconColor={{ default: theme.textMuted, selected: theme.accent }}
-      labelStyle={{ default: { fontSize: 11 }, selected: { fontSize: 11 } }}
+      labelStyle={{
+        // Without an explicit colour the native bar falls back to the platform's own
+        // onSurfaceVariant, which is dim against this palette. Dark mode wants the
+        // labels white so they read against the dark bar.
+        default: { fontSize: 11, color: isDark ? theme.text : theme.textMuted },
+        selected: { fontSize: 11, color: theme.accent },
+      }}
+      // Material's default 'auto' hides the unselected labels on Android, so the white
+      // dark-mode label would only ever show on the active tab.
+      labelVisibilityMode="labeled"
       indicatorColor={tint(theme.accent, 0.16)}>
-      {/* `sf` is iOS-only: on Android the tab bar ignores it and needs `md`, or the
-          icons come out blank. Both props together is the supported cross-platform pair. */}
+      {/* `src` alone works on both platforms; `renderingMode="template"` makes iOS tint the
+          Icons8 PNG with `iconColor`. Android tints image icons via the tab's itemIconTintList. */}
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'clock', selected: 'clock.fill' }}
-          md={{ default: 'history', selected: 'history' }}
+          src={require('@/assets/images/tab-timeline.png')}
+          renderingMode="template"
         />
         <NativeTabs.Trigger.Label>Timeline</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="insights">
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'chart.pie', selected: 'chart.pie.fill' }}
-          md={{ default: 'pie_chart', selected: 'pie_chart' }}
+          src={require('@/assets/images/tab-insights.png')}
+          renderingMode="template"
         />
         <NativeTabs.Trigger.Label>Insights</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
@@ -35,24 +45,24 @@ export default function TabLayout() {
           trigger also means native taps and back navigation keep working. */}
       <NativeTabs.Trigger name="add">
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'plus', selected: 'plus.circle.fill' }}
-          md={{ default: 'add', selected: 'add_circle' }}
+          src={require('@/assets/images/tab-add.png')}
+          renderingMode="template"
         />
         <NativeTabs.Trigger.Label>Add</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="budgets">
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'gauge.with.needle', selected: 'gauge.with.needle.fill' }}
-          md={{ default: 'donut_small', selected: 'donut_small' }}
+          src={require('@/assets/images/tab-budgets.png')}
+          renderingMode="template"
         />
         <NativeTabs.Trigger.Label>Budgets</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
       <NativeTabs.Trigger name="settings">
         <NativeTabs.Trigger.Icon
-          sf={{ default: 'gearshape', selected: 'gearshape.fill' }}
-          md={{ default: 'settings', selected: 'settings' }}
+          src={require('@/assets/images/tab-settings.png')}
+          renderingMode="template"
         />
         <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>

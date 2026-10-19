@@ -5,16 +5,26 @@ import Svg, { Circle, G, Rect } from 'react-native-svg';
 import { CATEGORY_COLORS, type Category } from '@/lib/categories';
 import { formatINR } from '@/lib/money';
 import { ThemedText } from '@/components/themed-text';
-import { Label } from '@/components/ui-kit';
+import { Label, tint } from '@/components/ui-kit';
 import { Radii, Spacing, Tabular } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
 type Slice = { category: Category; total: number; n?: number };
 
-export function Donut({ slices, size = 200 }: { slices: Slice[]; size?: number }) {
+export function Donut({
+  slices,
+  size = 208,
+  subtitle,
+}: {
+  slices: Slice[];
+  size?: number;
+  /** Small line under the amount in the hole ("142 transactions"). */
+  subtitle?: string;
+}) {
   const theme = useTheme();
   const total = slices.reduce((sum, s) => sum + s.total, 0);
-  const stroke = size * 0.15;
+  // Stitch's ring is 16px on a 190px viewBox, i.e. ~8.5% of the ring's diameter.
+  const stroke = size * 0.085;
   const r = (size - stroke) / 2;
   const circumference = 2 * Math.PI * r;
 
@@ -72,6 +82,11 @@ export function Donut({ slices, size = 200 }: { slices: Slice[]; size?: number }
         <ThemedText type="hero" style={styles.donutAmount}>
           {formatINR(total)}
         </ThemedText>
+        {subtitle !== undefined && (
+          <ThemedText type="small" themeColor="textMuted" style={styles.donutSubtitle}>
+            {subtitle}
+          </ThemedText>
+        )}
       </View>
     </View>
   );
@@ -104,7 +119,13 @@ export function Legend({
                 paddingBottom: Spacing.three - 4,
               },
             ]}>
-            <View style={[styles.dot, { backgroundColor: CATEGORY_COLORS[s.category] }]} />
+            <View
+              style={[
+                styles.dotWrap,
+                { backgroundColor: tint(CATEGORY_COLORS[s.category], 0.18) },
+              ]}>
+              <View style={[styles.dot, { backgroundColor: CATEGORY_COLORS[s.category] }]} />
+            </View>
             <View style={styles.legendText}>
               <ThemedText type="smallBold">{s.category}</ThemedText>
               {s.n !== undefined && (
@@ -153,37 +174,46 @@ export function ColumnBars({
     paise >= 10000000 ? `₹${(paise / 10000000).toFixed(1)}L` : `₹${(paise / 100000).toFixed(1)}k`;
 
   return (
-    <View style={[styles.columns, { height: height + 34 }]}>
-      {data.map((d, i) => {
-        const on = i === last;
-        return (
-          <View key={d.label} style={styles.column}>
-            <ThemedText
-              type="small"
-              themeColor={on ? 'text' : 'textMuted'}
-              style={styles.columnValue}>
-              {compact(d.value)}
-            </ThemedText>
-            <View style={[styles.columnTrack, { height }]}>
-              <View
-                style={[
-                  styles.columnFill,
-                  {
-                    height: `${Math.max((d.value / max) * 100, d.value > 0 ? 2 : 0)}%`,
-                    backgroundColor: on ? theme.accent : theme.borderStrong,
-                  },
-                ]}
-              />
+    <View style={styles.columnsWrap}>
+      {/* Three dashed rules behind the bars only. The bar track starts 20px down, after the
+          value labels, so the grid covers just that band. */}
+      <View style={[styles.grid, { top: 20, height }]} pointerEvents="none">
+        {[0, 1, 2].map((i) => (
+          <View key={i} style={[styles.gridLine, { borderColor: theme.borderStrong }]} />
+        ))}
+      </View>
+      <View style={[styles.columns, { height: height + 34 }]}>
+        {data.map((d, i) => {
+          const on = i === last;
+          return (
+            <View key={d.label} style={styles.column}>
+              <ThemedText
+                type="small"
+                themeColor={on ? 'text' : 'textMuted'}
+                style={styles.columnValue}>
+                {compact(d.value)}
+              </ThemedText>
+              <View style={[styles.columnTrack, { height }]}>
+                <View
+                  style={[
+                    styles.columnFill,
+                    {
+                      height: `${Math.max((d.value / max) * 100, d.value > 0 ? 2 : 0)}%`,
+                      backgroundColor: on ? theme.accent : theme.borderStrong,
+                    },
+                  ]}
+                />
+              </View>
+              <ThemedText
+                type="small"
+                themeColor={on ? 'text' : 'textMuted'}
+                style={styles.columnLabel}>
+                {d.label}
+              </ThemedText>
             </View>
-            <ThemedText
-              type="small"
-              themeColor={on ? 'text' : 'textMuted'}
-              style={styles.columnLabel}>
-              {d.label}
-            </ThemedText>
-          </View>
-        );
-      })}
+          );
+        })}
+      </View>
     </View>
   );
 }
@@ -225,14 +255,26 @@ export function Bars({ data }: { data: { label: string; value: number }[] }) {
 }
 
 const styles = StyleSheet.create({
-  donut: { alignItems: 'center', justifyContent: 'center' },
-  donutCenter: { position: 'absolute', alignItems: 'center' },
-  donutAmount: { fontSize: 22, lineHeight: 28, ...Tabular },
+  donut: { alignSelf: 'center', alignItems: 'center', justifyContent: 'center' },
+  // Absolute with no insets, the block would sit at the parent's top-left corner and grow
+  // rightwards from it, so the label ends up off-centre in the hole.
+  donutCenter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  donutAmount: { fontSize: 24, lineHeight: 30, ...Tabular },
+  donutSubtitle: { marginTop: 2 },
   legend: { gap: Spacing.three - 4, alignSelf: 'stretch' },
   legendRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two + 2 },
   legendPressed: { opacity: 0.55 },
   legendText: { flex: 1, gap: 1 },
-  dot: { width: 8, height: 8, borderRadius: 4 },
+  dotWrap: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  dot: { width: 9, height: 9, borderRadius: 5 },
   legendLabel: { flex: 1 },
   legendPct: { minWidth: 38, textAlign: 'right' },
   legendValue: { minWidth: 92, textAlign: 'right', ...Tabular },
@@ -240,6 +282,9 @@ const styles = StyleSheet.create({
   barRow: { gap: Spacing.one },
   barHeader: { flexDirection: 'row', justifyContent: 'space-between' },
   barLabel: { flex: 1 },
+  columnsWrap: { position: 'relative' },
+  grid: { position: 'absolute', left: 0, right: 0, top: 0, justifyContent: 'space-between' },
+  gridLine: { borderTopWidth: 1, borderStyle: 'dashed', opacity: 0.5 },
   columns: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.two + 2 },
   column: { flex: 1, alignItems: 'center', gap: Spacing.one },
   columnValue: { ...Tabular },

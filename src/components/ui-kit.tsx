@@ -1,5 +1,15 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewProps } from 'react-native';
+import {
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type ImageSourcePropType,
+  type StyleProp,
+  type TextStyle,
+  type ViewProps,
+} from 'react-native';
 import Svg, { Circle, Path } from 'react-native-svg';
 import Animated, {
   useAnimatedStyle,
@@ -86,72 +96,19 @@ export function Chip({
   );
 }
 
-/** 24x24 stroke glyphs, drawn so they read at 20px. One path set per category. */
-const GLYPHS: Record<Category, ReactNode> = {
-  Food: (
-    <>
-      <Path d="M4.5 2v4a2.5 2.5 0 0 0 5 0V2M7 8.5V22" />
-      <Path d="M17 2c-1.6 2.2-2.2 4.4-2.2 6.4 0 1.8 1 2.6 2.2 2.6V22" />
-    </>
-  ),
-  Groceries: (
-    <>
-      <Path d="M3 9h18l-1.6 10.2A2 2 0 0 1 17.4 21H6.6a2 2 0 0 1-2-1.8L3 9Z" />
-      <Path d="M8.5 9 11 3M15.5 9 13 3" />
-    </>
-  ),
-  Transport: (
-    <>
-      <Path d="M4 16v-3.2l2-5h12l2 5V16" />
-      <Path d="M3 16h18" />
-      <Circle cx="7.5" cy="17.6" r="1.6" />
-      <Circle cx="16.5" cy="17.6" r="1.6" />
-    </>
-  ),
-  Shopping: (
-    <>
-      <Path d="M5 8h14l-1 12H6L5 8Z" />
-      <Path d="M9 8V6a3 3 0 0 1 6 0v2" />
-    </>
-  ),
-  Bills: (
-    <>
-      <Path d="M6 3h12v18l-2.4-1.4L13.2 21l-2.4-1.4L8.4 21 6 19.6V3Z" />
-      <Path d="M9 8h6M9 12h6" />
-    </>
-  ),
-  Health: <Path d="M9 3h6v6h6v6h-6v6H9v-6H3V9h6V3Z" />,
-  Entertainment: (
-    <>
-      <Circle cx="12" cy="12" r="9" />
-      <Path d="M10 8.6 16 12l-6 3.4V8.6Z" />
-    </>
-  ),
-  Transfer: (
-    <>
-      <Path d="M4 9h13l-3.2-3.2" />
-      <Path d="M20 15H7l3.2 3.2" />
-    </>
-  ),
-  Date: (
-    <>
-      <Path d="M4 6h16v14H4Z" />
-      <Path d="M4 10h16M8 4v4M16 4v4" />
-    </>
-  ),
-  Other: (
-    <>
-      <Circle cx="5.5" cy="12" r="1.6" />
-      <Circle cx="12" cy="12" r="1.6" />
-      <Circle cx="18.5" cy="12" r="1.6" />
-    </>
-  ),
-  Rent: (
-    <>
-      <Path d="M3 11 12 4l9 7" />
-      <Path d="M5.5 9.5V20h13V9.5" />
-    </>
-  ),
+/** Icons8 artwork (black silhouettes), tinted to the category colour at render time. */
+const CATEGORY_ICONS: Record<Category, ImageSourcePropType> = {
+  Food: require('@/assets/images/cat-food.png'),
+  Groceries: require('@/assets/images/cat-groceries.png'),
+  Transport: require('@/assets/images/cat-transport.png'),
+  Shopping: require('@/assets/images/cat-shopping.png'),
+  Bills: require('@/assets/images/cat-bills.png'),
+  Health: require('@/assets/images/cat-health.png'),
+  Entertainment: require('@/assets/images/cat-entertainment.png'),
+  Transfer: require('@/assets/images/cat-transfer.png'),
+  Rent: require('@/assets/images/cat-rent.png'),
+  Date: require('@/assets/images/cat-date.png'),
+  Other: require('@/assets/images/cat-other.png'),
 };
 
 export function CategoryIcon({
@@ -164,10 +121,11 @@ export function CategoryIcon({
   color: string;
 }) {
   return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none"
-      stroke={color} strokeWidth={1.9} strokeLinecap="round" strokeLinejoin="round">
-      {GLYPHS[category]}
-    </Svg>
+    <Image
+      source={CATEGORY_ICONS[category]}
+      style={{ width: size, height: size, tintColor: color }}
+      resizeMode="contain"
+    />
   );
 }
 
@@ -226,6 +184,14 @@ const LINE_GLYPHS: Record<string, ReactNode> = {
       <Path d="M7 18h10.5a4 4 0 0 0 .4-8A6 6 0 0 0 6.3 8.6 4.3 4.3 0 0 0 7 18Z" />
     </>
   ),
+  calendar: (
+    <>
+      <Path d="M4 6h16v14H4Z" />
+      <Path d="M4 10h16M8 4v4M16 4v4" />
+    </>
+  ),
+  chevronLeft: <Path d="M14.5 5 8 12l6.5 7" />,
+  chevronRight: <Path d="M9.5 5 16 12l-6.5 7" />,
 };
 
 export function LineIcon({ name, size = 18, color }: { name: keyof typeof LINE_GLYPHS | string; size?: number; color: string }) {
