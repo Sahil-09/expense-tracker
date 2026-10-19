@@ -12,7 +12,7 @@ export type Parsed = {
   kind: SpendKind;
 };
 
-export type SpendKind = 'spend' | 'due' | 'transfer';
+export type SpendKind = 'spend' | 'due' | 'transfer' | 'income';
 
 export type ParseResult = { ok: true; parsed: Parsed } | { ok: false; reason: string };
 
@@ -26,10 +26,17 @@ const REJECT = [
 
 // No `g` flag: detectDirection tests these repeatedly, and a global regex carries
 // lastIndex between calls, which would make the answer depend on call order.
-const CREDIT = /\b(credited|received|remitted|refund(?:ed)?|salary|interest earned|cashback)/i;
+const CREDIT =
+  /\b(credited|received|remitted|refund(?:ed)?|salary|interest earned|cashback)|\bcr\.?\s+(?=₹|rs\.?|inr|\d)/i;
 
-/** Money demonstrably left the account. Beats CREDIT, so "debited ... cashback credited" stays a spend. */
-const DEBIT_STRONG = /\b(debited|spent|charged|paid|withdrawn|purchased)\b/i;
+/**
+ * Money demonstrably left the account. Beats CREDIT, so "debited ... cashback credited" stays a spend.
+ *
+ * "Dr." is Canara's shorthand for a debit, but the bare word is also a title, so it only
+ * counts when an amount follows it: "Dr. INR 1,680.00" is a spend, "Dr. Smith's clinic" is not.
+ */
+const DEBIT_STRONG =
+  /\b(debited|spent|charged|paid|withdrawn|purchased)\b|\bdr\.?\s+(?=₹|rs\.?|inr|\d)/i;
 
 /**
  * Names a payment without saying one left. Loses to CREDIT, so "Payment of Rs 500 has
@@ -89,6 +96,9 @@ export function isTransferMessage(body: string): boolean {
 export function classify(body: string): SpendKind {
   if (isDueMessage(body)) return 'due';
   if (isTransferMessage(body)) return 'transfer';
+  // A credit is money in, not a spend. It is stored so the month can show net spend,
+  // but it is never counted as an expense.
+  if (detectDirection(body) === 'credit') return 'income';
   return 'spend';
 }
 
@@ -108,6 +118,8 @@ const MERCHANT_PATTERNS = [
   // no word break after "ref", so the old boundary missed and the name fell through to
   // the "for other services" helpline span further down the same message.
   /\b(?:at|to)\s+([A-Za-z0-9][A-Za-z0-9 .&'/-]{1,38}?)\s+(?:avail|ref(?:no)?\b|txn|transaction)/i,
+  // Canara-style UPI SMS puts a separator before the UPI/ref clause: "to Famous Chick; UPI: ...".
+  /\b(?:at|to)\s+([A-Za-z0-9][A-Za-z0-9 .&'/-]{1,38}?)\s*[;,]\s*(?:upi|ref|txn|transaction|avail)/i,
   /\btowards\s+([A-Za-z0-9][A-Za-z0-9 .&'/-]{1,38}?)(?:\s+on|\s*,|$)/i,
   /\bfor\s+([A-Za-z0-9][A-Za-z0-9 .&'/-]{1,38}?)(?:\s+on\s|\s+using|\s*$)/i,
 ];
@@ -184,7 +196,6 @@ export function parseSms(body: string, receivedAt: number | null): ParseResult {
   }
 
   const direction = detectDirection(text);
-  if (direction === 'credit') return { ok: false, reason: 'income' };
   if (direction === null) return { ok: false, reason: 'no-direction' };
 
   const amountPaise = extractAmount(text);

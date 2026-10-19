@@ -17,7 +17,7 @@ import { onCaptured } from '@/lib/sms';
 import { useTheme } from '@/hooks/use-theme';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 
-type Row = { title: string; total: number; data: Expense[]; kind: 'day' | 'due' | 'excluded' };
+type Row = { title: string; total: number; data: Expense[]; kind: 'day' };
 
 export default function TimelineScreen() {
   const router = useRouter();
@@ -80,46 +80,25 @@ export default function TimelineScreen() {
   );
 
   const sections = useMemo<Row[]>(() => {
-    // Counted rows own the day sections; everything excluded belongs to a tail section
-    // below, so a row appears exactly once.
+    // Every row lands in its day, whatever its kind. Dues, transfers and income stay
+    // visible next to the spending, dimmed, so the month reads as a statement rather than
+    // two lists; the day header counts only what is still an expense.
     const byDay = new Map<number, Expense[]>();
     for (const e of visible) {
-      if (e.is_expense !== 1) continue;
       const day = new Date(e.txn_at).setHours(0, 0, 0, 0);
       const list = byDay.get(day);
       if (list) list.push(e);
       else byDay.set(day, [e]);
     }
-    const days: Row[] = [...byDay.entries()].map(([day, data]) => ({
-      title: dayLabel(day),
-      total: data.reduce((sum, e) => sum + e.amount_paise, 0),
-      data,
-      kind: 'day',
-    }));
-
-    if (filter !== null) return days;
-
-    // Obligations and hand-excluded rows trail the real spending, one flat list each.
-    // Their headers show what they add up to, which the counted total above reports as
-    // nothing because none of it is counted.
-    const byNewest = (a: Expense, b: Expense) => b.txn_at - a.txn_at;
-    const tail = (title: string, kind: Row['kind'], rows: Expense[]): Row | null =>
-      rows.length === 0
-        ? null
-        : { title, total: rows.reduce((sum, e) => sum + e.amount_paise, 0), data: rows, kind };
-
-    const dues = tail(
-      'Dues & bills',
-      'due',
-      visible.filter((e) => e.is_due === 1).sort(byNewest)
-    );
-    const rest = tail(
-      'Not an expense',
-      'excluded',
-      visible.filter((e) => e.is_expense === 0 && e.is_due !== 1).sort(byNewest)
-    );
-    return [...days, dues, rest].filter((s): s is Row => s !== null);
-  }, [visible, filter]);
+    return [...byDay.entries()]
+      .sort((a, b) => b[0] - a[0])
+      .map(([day, data]) => ({
+        title: dayLabel(day),
+        total: data.reduce((sum, e) => sum + (e.is_expense === 1 ? e.amount_paise : 0), 0),
+        data,
+        kind: 'day' as const,
+      }));
+  }, [visible]);
 
   const dayCount = sections.filter((s) => s.kind === 'day' && s.total > 0).length;
   // The per-category monthly limits add up to one monthly target, as the design shows.
@@ -192,16 +171,19 @@ export default function TimelineScreen() {
         renderSectionHeader={({ section }) => (
           <View style={styles.sectionHeader}>
             <Label>{section.title}</Label>
-            <ThemedText type="smallBold" themeColor="textMuted">
-              {formatINR(section.total)}
-            </ThemedText>
+            {section.total > 0 && (
+              <ThemedText type="smallBold" themeColor="textMuted">
+                {formatINR(section.total)}
+              </ThemedText>
+            )}
           </View>
         )}
         renderItem={({ item, index, section }) => {
           const last = index === section.data.length - 1;
+          const income = item.is_income === 1;
           const due = item.is_due === 1;
           const excluded = item.is_expense === 0;
-          const tag = due ? 'Due' : excluded ? 'Not an expense' : item.category;
+          const tag = income ? 'Income' : due ? 'Due' : excluded ? 'Not an expense' : item.category;
           // Opacity only, no transform or measurement: anything else makes every recycled
           // cell re-lay-out mid-scroll, which is what actually costs frames here.
           const isNew = seen.current?.month === monthMs && !seen.current.ids.has(String(item.id));
@@ -230,7 +212,7 @@ export default function TimelineScreen() {
                   type="merchant"
                   numberOfLines={1}
                   themeColor={excluded ? 'textMuted' : undefined}
-                  style={excluded && styles.struck}>
+                  style={excluded && !income && styles.struck}>
                   {item.merchant ?? 'Unknown merchant'}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textMuted" numberOfLines={1}>
@@ -244,7 +226,11 @@ export default function TimelineScreen() {
               </View>
               <View style={styles.rowAmount}>
                 <ThemedText type="amount" themeColor={excluded ? 'textMuted' : undefined}>
-                  {excluded ? formatINR(item.amount_paise) : `−${formatINR(item.amount_paise)}`}
+                  {income
+                    ? `+${formatINR(item.amount_paise)}`
+                    : excluded
+                      ? formatINR(item.amount_paise)
+                      : `−${formatINR(item.amount_paise)}`}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textMuted">
                   {new Date(item.txn_at).toLocaleTimeString(undefined, {

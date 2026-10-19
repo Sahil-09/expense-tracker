@@ -168,16 +168,16 @@ describe('parseSms - rejects', () => {
     expect(parse(body)).toEqual({ ok: false, reason });
   });
 
-  it('rejects income instead of logging it as a spend', () => {
-    expect(parse('Rs. 40,000.00 credited to A/c X1234 on 03/03/2026')).toEqual({
-      ok: false,
-      reason: 'income',
-    });
-    expect(parse('INR 25,000 has been credited to your account')).toEqual({
-      ok: false,
-      reason: 'income',
-    });
-    expect(parse('Salary credited Rs 40,000')).toEqual({ ok: false, reason: 'income' });
+  it('stores income as income, not as a spend', () => {
+    for (const body of [
+      'Rs. 40,000.00 credited to A/c X1234 on 03/03/2026',
+      'INR 25,000 has been credited to your account',
+      'Salary credited Rs 40,000',
+    ]) {
+      const r = parse(body);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.parsed.kind).toBe('income');
+    }
   });
 
   it('rejects a debit with no parseable amount', () => {
@@ -186,14 +186,14 @@ describe('parseSms - rejects', () => {
 
   it('reads income as income even when it names the outgoing payment first', () => {
     // "payment of" only names a payment; nothing says money left the account.
-    expect(parse('Payment of Rs 500 has been received from Zomato')).toEqual({
-      ok: false,
-      reason: 'income',
-    });
-    expect(parse('Purchase of Rs 1200 credited to your account by Amazon')).toEqual({
-      ok: false,
-      reason: 'income',
-    });
+    for (const body of [
+      'Payment of Rs 500 has been received from Zomato',
+      'Purchase of Rs 1200 credited to your account by Amazon',
+    ]) {
+      const r = parse(body);
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.parsed.kind).toBe('income');
+    }
   });
 });
 
@@ -278,6 +278,41 @@ describe('parseSms - accepts spends', () => {
     expect(r.parsed.direction).toBe('debit');
   });
 
+  // Verbatim from the device inbox. Canara writes the debit as "Dr." and puts the UPI
+  // reference behind a semicolon, so both the direction and the merchant had to be taught.
+  const CANARA =
+    '[AD-CANBNK-S] Dear Customer, Acct XXXX9649 Dr. INR 1,680.00 on 11/10/26 to Famous Chick; ' +
+    'UPI: 131090294863; Bal INR 1,86,417.20.Not you?SMS BLOCKUPI to 9901771222-CanaraBank';
+
+  it('reads the Canara "Dr." debit and the merchant behind the semicolon', () => {
+    const r = parse(CANARA);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.parsed.amountPaise).toBe(168000);
+    expect(r.parsed.direction).toBe('debit');
+    expect(r.parsed.merchant).toBe('Famous Chick');
+    expect(r.parsed.kind).toBe('spend');
+  });
+
+  it('reads a Canara credit as income', () => {
+    const r = parse(
+      'Dear Customer, Acct XXXX9649 Cr. INR 500.00 on 11/10/26 from Rahul Sharma; UPI: 131090294863'
+    );
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.parsed.kind).toBe('income');
+      expect(r.parsed.direction).toBe('credit');
+    }
+  });
+
+  it('does not read a doctor as a debit', () => {
+    // "Dr." is also a title. Only "Dr." followed by an amount is a bank debit.
+    expect(parse("Dr. Smith's clinic confirmed for 11/10/2026")).toEqual({
+      ok: false,
+      reason: 'no-direction',
+    });
+  });
+
   it('reads the HDFC multi-line "Sent Rs.40.00" UPI format', () => {
     const r = parse(
       'Sent Rs.40.00 From HDFC Bank A/C *5391 To KARTIK STORE NEW On 10/10/26 Ref 664943010376 ' +
@@ -291,7 +326,9 @@ describe('parseSms - accepts spends', () => {
   });
 
   it('still treats cashback sent as income, not a spend', () => {
-    expect(parse('Rs 50 cashback sent to your account')).toEqual({ ok: false, reason: 'income' });
+    const r = parse('Rs 50 cashback sent to your account');
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.parsed.kind).toBe('income');
   });
 
   // Verbatim from the device inbox. It was the only real message in 90 days that no

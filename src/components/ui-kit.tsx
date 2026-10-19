@@ -133,6 +133,12 @@ const GLYPHS: Record<Category, ReactNode> = {
       <Path d="M20 15H7l3.2 3.2" />
     </>
   ),
+  Date: (
+    <>
+      <Path d="M4 6h16v14H4Z" />
+      <Path d="M4 10h16M8 4v4M16 4v4" />
+    </>
+  ),
   Other: (
     <>
       <Circle cx="5.5" cy="12" r="1.6" />

@@ -18,7 +18,7 @@ import { BottomTabInset, MaxContentWidth, Radii, Spacing } from '@/constants/the
 export default function InsightsScreen() {
   const router = useRouter();
   const [monthMs, setMonthMs] = useState(() => monthStart(Date.now()));
-  const { byCategory, total } = useMonthData(monthMs);
+  const { byCategory, total, income } = useMonthData(monthMs);
   const monthlyTotals = useMonthlyTotals(6);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -84,6 +84,9 @@ export default function InsightsScreen() {
               label="Txns"
               value={String(byCategory.reduce((s, c) => s + (c.n ?? 0), 0))}
             />
+            {income > 0 && (
+              <Stat label="Income" value={<AnimatedMoney paise={income} type="small" />} />
+            )}
           </View>
         </Card>
 

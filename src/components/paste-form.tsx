@@ -49,11 +49,25 @@ export function PasteForm() {
     if (outcome.status === 'added') setText('');
   };
 
+  const KIND_LABEL: Record<string, string> = {
+    spend: 'Spend',
+    due: 'Due',
+    transfer: 'Transfer',
+    income: 'Income',
+  };
+
   const verdict =
     preview === null
       ? null
       : preview.ok
-        ? { tone: 'good', label: 'Spend', detail: categorize(preview.parsed.merchant ?? '') }
+        ? {
+            tone: 'good',
+            label: KIND_LABEL[preview.parsed.kind] ?? 'Spend',
+            detail:
+              preview.parsed.kind === 'spend'
+                ? categorize(preview.parsed.merchant ?? '')
+                : null,
+          }
         : { tone: 'bad', label: REASON_LABEL[preview.reason] ?? preview.reason, detail: null };
 
   return (

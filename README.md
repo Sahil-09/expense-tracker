@@ -4,7 +4,8 @@ Turns bank SMS into expenses.
 
 - **Android** — reads the inbox and captures new bank SMS automatically.
 - **iOS** — Apple gives no app permission to read the SMS inbox, so intake is via the
-  share sheet (Messages → Share → this app) or by pasting the text.
+  share sheet (Messages → Share → this app), an Apple Shortcut that opens
+  `expensetracker://import?sms=…` (see `ios_sms_shortcut.md`), or by pasting the text.
 
 ## Running it
 
@@ -33,7 +34,8 @@ Every SMS source funnels through one function, so there is a single place to fix
 ```
 Android inbox (ContentResolver) ─┐
 Android live broadcast ──────────┼─> ingestSms() ─> parseSms() ─> expenses table
-iOS share sheet / paste ─────────┘
+iOS share sheet / paste ─────────┤
+iOS Shortcut URL ────────────────┘
 ```
 
 | File | What it owns |

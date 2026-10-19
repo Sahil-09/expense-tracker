@@ -187,8 +187,17 @@ export async function scanInbox(
   return { ok: true, ...summary };
 }
 
+/**
+ * How old a replayed message may be and still earn a popup. A message from while the app
+ * was closed is news if the user is back minutes later, and stale by the next morning.
+ * shortcut: fixed window, revisit if missed spends should notify however late.
+ */
+const REPLAY_MAX_AGE_MS = 30 * 60 * 1000;
+
 const captured = new Set<() => void>();
 let liveSub: { remove: () => void } | null = null;
+/** One popup per cold start: a backlog of recent spends must not arrive as a burst. */
+let replayNotified = false;
 
 /** Fires every watcher. Live capture and the inbox scan both route through here. */
 function notifyCaptured(): void {
@@ -204,14 +213,21 @@ function notifyCaptured(): void {
  */
 export function startLiveCapture(): void {
   if (!canReadSms || liveSub) return;
+  replayNotified = false;
   const handler = (event: { body: string; date: number; isReplay?: boolean }) => {
     void ingestSms(event.body, event.date, 'android-live')
       .then(async (outcome) => {
         if (outcome.status !== 'added') return;
         notifyCaptured();
-        // A replay is the app catching up on messages that arrived while it was closed.
-        // The expense is real, but a burst of them on every cold start is noise, not news.
-        if (!event.isReplay) await notifyExpense(outcome.id);
+        if (event.isReplay) {
+          // A replay is the app catching up on messages that arrived while it was closed
+          // (up to 200 queued). Pop once for the first one recent enough to be news; the
+          // rest are already on the timeline, and a backlog must not arrive as a burst.
+          if (replayNotified) return;
+          if (Date.now() - event.date > REPLAY_MAX_AGE_MS) return;
+          replayNotified = true;
+        }
+        await notifyExpense(outcome.id);
       })
       // A live-capture failure has nowhere to surface; swallowing it keeps the app up.
       .catch(() => {});

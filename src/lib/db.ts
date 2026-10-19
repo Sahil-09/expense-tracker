@@ -25,6 +25,8 @@ export type Expense = {
   is_expense: number;
   /** 1 when the message announced an upcoming charge rather than reporting one. */
   is_due: number;
+  /** 1 when the message was money in. Stored for the month's net, never counted as spend. */
+  is_income: number;
   /** When this row last changed on this device. Drives push-what-changed. */
   updated_at: number;
 };
@@ -91,7 +93,8 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       raw_sms TEXT NOT NULL,
       dedupe_key TEXT NOT NULL UNIQUE,
       source TEXT NOT NULL,
-      is_expense INTEGER NOT NULL DEFAULT 1
+      is_expense INTEGER NOT NULL DEFAULT 1,
+      is_income INTEGER NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS idx_expenses_txn_at ON expenses (txn_at);
     CREATE TABLE IF NOT EXISTS budgets (
@@ -116,6 +119,13 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
       }
       try {
         await handle.execAsync('ALTER TABLE expenses ADD COLUMN is_due INTEGER NOT NULL DEFAULT 0;');
+      } catch {
+        /* already migrated */
+      }
+      try {
+        await handle.execAsync(
+          'ALTER TABLE expenses ADD COLUMN is_income INTEGER NOT NULL DEFAULT 0;'
+        );
       } catch {
         /* already migrated */
       }
@@ -209,13 +219,16 @@ export async function ingestSms(
   const { amountPaise, merchant, txnAt, kind } = result.parsed;
   const d = await getDb();
   const isDue = kind === 'due' ? 1 : 0;
+  const isIncome = kind === 'income' ? 1 : 0;
 
   // A transfer is never a spend, and naming it beats the merchant scrape, which reads
   // "Suryoday Small Finance Ba" and cannot match a category rule.
   const category: Category = kind === 'transfer' ? 'Transfer' : categorize(merchant ?? body);
 
-  // A payment the user once flagged as personal must never come back as a spend.
-  if (merchant && (await isExcluded(merchant))) {
+  // A payment the user once flagged as personal must never come back as a spend. Income
+  // is exempt: a "don't log this merchant" verdict was about spending, and applying it
+  // to a refund would hide money coming back in.
+  if (kind !== 'income' && merchant && (await isExcluded(merchant))) {
     return { status: 'skipped', reason: 'not-expense' };
   }
 
@@ -223,8 +236,8 @@ export async function ingestSms(
   // import of the same SMS cannot slip a duplicate past a separate lookup.
   const info = await d.runAsync(
     `INSERT OR IGNORE INTO expenses
-       (amount_paise, merchant, category, txn_at, note, raw_sms, dedupe_key, source, is_expense, is_due, client_id, updated_at)
-     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+       (amount_paise, merchant, category, txn_at, note, raw_sms, dedupe_key, source, is_expense, is_due, is_income, client_id, updated_at)
+     VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
     amountPaise,
     merchant,
     category,
@@ -234,6 +247,7 @@ export async function ingestSms(
     source,
     kind === 'spend' ? 1 : 0,
     isDue,
+    isIncome,
     uuid(),
     stamp()
   );
@@ -266,8 +280,9 @@ export async function reclassifyPending(): Promise<number> {
     const kind = classify(r.raw_sms);
     if (kind === 'spend') continue;
     await d.runAsync(
-      'UPDATE expenses SET is_due = ?, is_expense = 0, category = ?, updated_at = ? WHERE id = ?',
+      'UPDATE expenses SET is_expense = 0, is_due = ?, is_income = ?, category = ?, updated_at = ? WHERE id = ?',
       kind === 'due' ? 1 : r.is_due,
+      kind === 'income' ? 1 : 0,
       kind === 'transfer' ? 'Transfer' : r.category,
       stamp(),
       r.id
@@ -292,6 +307,18 @@ export async function monthlyTotal(monthMs: number): Promise<number> {
   const start = monthStart(monthMs);
   const row = await d.getFirstAsync<{ total: number | null }>(
     'SELECT SUM(amount_paise) AS total FROM expenses WHERE txn_at >= ? AND txn_at < ? AND is_expense = 1',
+    start,
+    addMonths(start, 1)
+  );
+  return row?.total ?? 0;
+}
+
+/** Money in for the month, so the insights screen can show a net figure. Never a spend. */
+export async function monthlyIncome(monthMs: number): Promise<number> {
+  const d = await getDb();
+  const start = monthStart(monthMs);
+  const row = await d.getFirstAsync<{ total: number | null }>(
+    'SELECT SUM(amount_paise) AS total FROM expenses WHERE txn_at >= ? AND txn_at < ? AND is_income = 1',
     start,
     addMonths(start, 1)
   );
@@ -481,9 +508,13 @@ export async function setExpense(
   isDue = false
 ): Promise<void> {
   const d = await getDb();
+  const flag = isExpense ? 1 : 0;
+  // Marking money-in as an expense clears the income flag, so a row can never count on
+  // both sides of the month at once.
   await d.runAsync(
-    'UPDATE expenses SET is_expense = ?, updated_at = ? WHERE id = ?',
-    isExpense ? 1 : 0,
+    'UPDATE expenses SET is_expense = ?, is_income = CASE WHEN ? = 1 THEN 0 ELSE is_income END, updated_at = ? WHERE id = ?',
+    flag,
+    flag,
     stamp(),
     id
   );
@@ -595,6 +626,7 @@ export type PushableExpense = {
   source: string;
   isExpense: boolean;
   isDue: boolean;
+  isIncome: boolean;
   deleted: boolean;
 };
 
@@ -618,6 +650,7 @@ export async function expensesSince(since: number): Promise<PushableExpense[]> {
     source: string;
     is_expense: number;
     is_due: number;
+    is_income: number;
   }>('SELECT * FROM expenses WHERE updated_at > ? ORDER BY updated_at', since);
 
   const tombs = await tombstonesSince(since, 'expense');
@@ -635,6 +668,7 @@ export async function expensesSince(since: number): Promise<PushableExpense[]> {
     source: r.source,
     isExpense: r.is_expense === 1,
     isDue: r.is_due === 1,
+    isIncome: r.is_income === 1,
     deleted: false,
   }));
 
@@ -653,6 +687,7 @@ export async function expensesSince(since: number): Promise<PushableExpense[]> {
       source: '',
       isExpense: false,
       isDue: false,
+      isIncome: false,
       deleted: true,
     })),
   ];
@@ -706,6 +741,7 @@ export type RemoteExpense = {
   source: string;
   isExpense: boolean;
   isDue: boolean;
+  isIncome: boolean;
   deletedAt: number | null;
 };
 
@@ -742,8 +778,8 @@ export async function applyRemote(row: RemoteExpense): Promise<void> {
     await d.runAsync(
       `INSERT OR REPLACE INTO expenses
          (client_id, amount_paise, merchant, category, txn_at, note, raw_sms,
-          dedupe_key, source, is_expense, is_due, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          dedupe_key, source, is_expense, is_due, is_income, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       row.clientId,
       row.amountPaise,
       row.merchant,
@@ -755,6 +791,7 @@ export async function applyRemote(row: RemoteExpense): Promise<void> {
       row.source,
       row.isExpense ? 1 : 0,
       row.isDue ? 1 : 0,
+      row.isIncome ? 1 : 0,
       at
     );
   });

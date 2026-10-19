@@ -107,7 +107,7 @@ export default function ExpenseScreen() {
         <View style={styles.hero}>
           <IconWell category={expense.category} size={64} />
           <ThemedText type="hero" style={styles.amount}>
-            {isExpense ? '−' : ''}
+            {expense.is_income === 1 ? '+' : isExpense ? '−' : ''}
             {formatINR(expense.amount_paise)}
           </ThemedText>
           <ThemedText type="subtitle">{expense.merchant ?? 'Unknown merchant'}</ThemedText>
@@ -116,27 +116,40 @@ export default function ExpenseScreen() {
           </ThemedText>
         </View>
 
-        <Card style={isExpense ? undefined : { borderColor: tint(theme.danger, 0.35) }}>
-          <View style={styles.toggleRow}>
-            <View style={styles.toggleText}>
-              <ThemedText type="subtitle">Expense</ThemedText>
-              <ThemedText type="small" themeColor="textMuted">
-                {expense.merchant
-                  ? isExpense
-                    ? 'Counted in your totals.'
-                    : `Left out of totals. Future payments to ${expense.merchant} are skipped too.`
-                  : 'Counted in your totals. No merchant, so nothing is remembered.'
-              }</ThemedText>
+        {expense.is_income === 1 ? (
+          <Card>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleText}>
+                <ThemedText type="subtitle">Income</ThemedText>
+                <ThemedText type="small" themeColor="textMuted">
+                  Money in. Never counted in your totals.
+                </ThemedText>
+              </View>
             </View>
-            <Switch
-              accessibilityLabel="Mark as expense"
-              value={isExpense}
-              onValueChange={(next) => void toggleExpense(next)}
-              trackColor={{ false: theme.border, true: tint(theme.accent, 0.5) }}
-              thumbColor={isExpense ? theme.accent : theme.textMuted}
-            />
-          </View>
-        </Card>
+          </Card>
+        ) : (
+          <Card style={isExpense ? undefined : { borderColor: tint(theme.danger, 0.35) }}>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleText}>
+                <ThemedText type="subtitle">Expense</ThemedText>
+                <ThemedText type="small" themeColor="textMuted">
+                  {expense.merchant
+                    ? isExpense
+                      ? 'Counted in your totals.'
+                      : `Left out of totals. Future payments to ${expense.merchant} are skipped too.`
+                    : 'Counted in your totals. No merchant, so nothing is remembered.'
+                }</ThemedText>
+              </View>
+              <Switch
+                accessibilityLabel="Mark as expense"
+                value={isExpense}
+                onValueChange={(next) => void toggleExpense(next)}
+                trackColor={{ false: theme.border, true: tint(theme.accent, 0.5) }}
+                thumbColor={isExpense ? theme.accent : theme.textMuted}
+              />
+            </View>
+          </Card>
+        )}
 
         <View style={styles.section}>
           <Label>Category</Label>
