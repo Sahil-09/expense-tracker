@@ -1,0 +1,245 @@
+npm notice run expense-tracker@1.0.0 npx
+npm notice run expo start --android
+env: load .env
+env: export EXPO_PUBLIC_SYNC_URL
+Starting project at E:\dev\Projects\expense-tracker
+Using src/app as the root directory for Expo Router.
+React Compiler enabled
+Starting Metro Bundler
+
+› Opening exp://192.168.1.40:8081 on Pixel_9_Pro
+Waiting on http://localhost:8081
+
+An update for expo is available: 57.0.27 → ~57.0.31
+8 other packages may need updating. Run npx expo install --check for details.
+Logs for your project will appear below.
+Android Bundled 47574ms node_modules\expo-router\entry.js (2029 modules)
+Android Bundled 16028ms node_modules\expo-router\entry.js (2027 modules)
+ WARN  Route "./_layout.tsx" is missing the required default export. Ensure a React component is exported as default.
+ WARN  Route "./import.tsx" is missing the required default export. Ensure a React component is exported as default.
+ WARN  Route "./(tabs)/index.tsx" is missing the required default export. Ensure a React component is exported as default.
+ WARN  Route "./(tabs)/settings.tsx" is missing the required default export. Ensure a React component is exported as default.
+ WARN  Route "./_layout.tsx" is missing the required default export. Ensure a React component is exported as default.
+ WARN  Route "./import.tsx" is missing the required default export. Ensure a React component is exported as default.
+ WARN  Route "./(tabs)/index.tsx" is missing the required default export. Ensure a React component is exported as default.
+ WARN  Route "./(tabs)/settings.tsx" is missing the required default export. Ensure a React component is exported as default.
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [Error: expo-notifications: Android Push notifications (remote notifications) functionality provided by expo-notifications was removed from Expo Go with the release of SDK 53. Use a development build instead of Expo Go. Learn more at https://docs.expo.dev/develop/development-builds/introduction/.] 
+
+Code: _layout.tsx
+[0m [90m  8 |[39m   type [33mHref[39m[33m,[39m
+ [90m  9 |[39m } [36mfrom[39m [32m'expo-router'[39m[33m;[39m
+[31m[1m>[22m[39m[90m 10 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mNotifications[39m [36mfrom[39m [32m'expo-notifications'[39m[33m;[39m
+ [90m    |[39m [31m[1m^[22m[39m
+ [90m 11 |[39m [36mimport[39m [33m*[39m [36mas[39m [33mSplashScreen[39m [36mfrom[39m [32m'expo-splash-screen'[39m[33m;[39m
+ [90m 12 |[39m [36mimport[39m {
+ [90m 13 |[39m   [33mInter_400Regular[39m[33m,[39m[0m
+Call Stack
+  <global> (src\app\_layout.tsx:10)
+ ERROR  [TypeError: Cannot read property 'ErrorBoundary' of undefined] 
+
+Code: useScreens.js
+[0m [90m 139 |[39m     })[33m,[39m [sorted[33m,[39m protectedScreens])[33m;[39m
+ [90m 140 |[39m }
+[31m[1m>[22m[39m[90m 141 |[39m [36mfunction[39m fromImport(value[33m,[39m { [33mErrorBoundary[39m[33m,[39m [33mSuspenseFallback[39m[33m,[39m unstable_settings[33m,[39m [33m...[39mcomponent }) {
+ [90m     |[39m [31m[1m^[22m[39m
+ [90m 142 |[39m     [90m// If possible, add a more helpful display name for the component stack to improve debugging of React errors such as `Text strings must be rendered within a <Text> component.`.[39m
+ [90m 143 |[39m     [36mif[39m (component[33m?[39m[33m.[39m[36mdefault[39m [33m&&[39m __DEV__) {
+ [90m 144 |[39m         component[33m.[39m[36mdefault[39m[33m.[39mdisplayName [33m?[39m[33m?[39m[33m=[39m [32m`${component.default.name ?? 'Route'}(${value.contextKey})`[39m[33m;[39m[0m
+Call Stack
+  fromImport (node_modules\expo-router\build\useScreens.js:141)
+  getQualifiedRouteComponent (node_modules\expo-router\build\useScreens.js:219:34)
+  useStore (node_modules\expo-router\build\global-state\useStore.js:55:68)
+  ContextNavigator (node_modules\expo-router\build\ExpoRoot.js:122:46)
+  callComponent.react_stack_bottom_frame (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:17130:29)
+  renderWithHooks (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:5648:40)
+  updateFunctionComponent (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:8081:34)
+  beginWork (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:9340:41)
+  run (<native>)
+  runWithFiberInDEV (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:697:33)
+  performUnitOfWork (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:14134:39)
+  workLoopSync (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:13966:58)
+  renderRootSync (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:13947:23)
+  performWorkOnRoot (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:13160:43)
+  performWorkOnRootViaSchedulerTask (node_modules\react-native\Libraries\Renderer\implementations\ReactFabric-dev.js:3673:24) 
+
+Code: ExpoRoot.js
+[0m [90m 83 |[39m                     initialMetrics[33m:[39m [33mINITIAL_METRICS[39m[33m,[39m children[33m:[39m children }) }) }))[33m;[39m
+ [90m 84 |[39m     }[33m,[39m [[33mParentWrapper[39m])[33m;[39m
+[31m[1m>[22m[39m[90m 85 |[39m     [36mreturn[39m ([35m0[39m[33m,[39m jsx_runtime_1[33m.[39mjsx)([33mContextNavigator[39m[33m,[39m { [33m...[39mprops[33m,[39m wrapper[33m:[39m wrapper })[33m;[39m
+ [90m    |[39m                                 [31m[1m^[22m[39m
+ [90m 86 |[39m }
+ [90m 87 |[39m [36mconst[39m initialUrl [33m=[39m react_native_1[33m.[39m[33mPlatform[39m[33m.[39m[33mOS[39m [33m===[39m [32m'web'[39m [33m&&[39m [36mtypeof[39m window [33m!==[39m [32m'undefined'[39m
+ [90m 88 |[39m     [33m?[39m [36mnew[39m [33mURL[39m(window[33m.[39mlocation[33m.[39mhref)[0m
+Call Stack
+  ExpoRoot (node_modules\expo-router\build\ExpoRoot.js:85:33)
+  App (node_modules\expo-router\build\qualified-entry.js:20:91)
+  WithDevTools (node_modules\expo\src\launch\withDevTools.tsx:21:12)
+ ERROR  [Error: Uncaught (in promise, id: 0) ReferenceError: Property 'hasSmsPermission' doesn't exist] 
+
+Code: _layout.tsx
+[0m [90m 141 |[39m     autoScanned [33m=[39m [36mtrue[39m[33m;[39m
+ [90m 142 |[39m     [36mvoid[39m ([36masync[39m () [33m=>[39m {
+[31m[1m>[22m[39m[90m 143 |[39m       [36mif[39m ([36mawait[39m hasSmsPermission()) [36mawait[39m runScan()[33m.[39m[36mcatch[39m(() [33m=>[39m {})[33m;[39m
+ [90m     |[39m                 [31m[1m^[22m[39m
+ [90m 144 |[39m     })()[33m;[39m
+ [90m 145 |[39m   }[33m,[39m [])[33m;[39m
+ [90m 146 |[39m[0m
+Call Stack
+  <anonymous> (src\app\_layout.tsx:143:17)
+  NavigationShell (src\app\_layout.tsx:76)
+  useEffect$argument_0 (src\app\_layout.tsx:144:6)
+Android Bundled 99ms node_modules\expo-router\entry.js (1 module)
+Android Bundled 104ms node_modules\expo-router\entry.js (1 module)
+Android Bundled 13861ms node_modules\expo-router\entry.js (1 module)
+Android Bundled 74ms node_modules\expo-router\entry.js (1 module)
+Android Bundled 63ms node_modules\expo-router\entry.js (1 module)
+Android Bundled 7982ms node_modules\expo-router\entry.js (1 module)
+ LOG  [scan] days= 90 sinceMs= 1784901424843 now= 1792677424843
+ LOG  [scan] days= 0 sinceMs= 0 now= 1792677440971
+ ERROR  [Error: Uncaught (in promise, id: 0) Error: Call to function 'NativeDatabase.prepareAsync' has been rejected.
+→ Caused by: The 2nd argument cannot be cast to type class expo.modules.sqlite.NativeStatement (received class java.lang.Integer)
+→ Caused by: Cannot use shared object that was already released] 
+
+Code: CodedError.ts
+[0m [90m  9 |[39m
+ [90m 10 |[39m   constructor(code[33m:[39m string[33m,[39m message[33m:[39m string) {
+[31m[1m>[22m[39m[90m 11 |[39m     [36msuper[39m(message)[33m;[39m
+ [90m    |[39m          [31m[1m^[22m[39m
+ [90m 12 |[39m     [36mthis[39m[33m.[39mcode [33m=[39m code[33m;[39m
+ [90m 13 |[39m   }
+ [90m 14 |[39m }[0m
+Call Stack
+  constructor (node_modules\expo-modules-core\src\errors\CodedError.ts:11:10)
+Android Bundled 1571ms node_modules\expo-router\entry.js (1 module)

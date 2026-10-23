@@ -73,3 +73,16 @@ export function dayLabel(at: number): string {
   const month = d.toLocaleDateString(undefined, { month: 'short' });
   return `${weekday}, ${d.getDate()} ${month}`;
 }
+
+/**
+ * "10:14 AM" — 12-hour with an explicit meridiem.
+ *
+ * Hand-rolled rather than `toLocaleTimeString`: that follows the device's 24-Hour Time
+ * setting, which drops the AM/PM this exists to show.
+ */
+export function timeLabel(at: number): string {
+  const d = new Date(at);
+  const hours = d.getHours();
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours % 12 || 12}:${minutes} ${hours < 12 ? 'AM' : 'PM'}`;
+}

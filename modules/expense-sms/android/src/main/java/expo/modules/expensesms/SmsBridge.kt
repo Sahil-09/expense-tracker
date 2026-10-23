@@ -6,7 +6,7 @@ import android.content.Context
 interface SmsSink {
   /**
    * [isReplay] is true when this is a backlog message from a previous run rather than one
-   * that just arrived, so JS can log it without firing a notification for each one.
+   * that just arrived, so JS can log it without raising a second notification.
    */
   fun onMessage(address: String, body: String, date: Double, isReplay: Boolean)
 }
@@ -23,9 +23,17 @@ object SmsBridge {
     sink = null
   }
 
+  /** Whether a JS listener is currently attached — used by SmsReceiver to avoid
+   *  double-notifying when the JS (notifyExpense) path will fire.
+   */
+  fun isAttached(): Boolean = sink != null
+
   /**
    * Replays everything queued while the app was closed. Safe to call with no listener:
    * with no sink attached it returns and the queue is left for next time.
+   *
+   * [isReplay] tells the sink these are backlog messages, which the receiver has already
+   * notified about.
    */
   fun flush(context: Context, isReplay: Boolean) {
     val s = sink ?: return

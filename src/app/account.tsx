@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -16,19 +16,15 @@ import {
   serverUrl,
   signIn,
 } from '@/lib/sync';
+import { confirmAlert } from '@/lib/confirm';
 import { setPref } from '@/lib/db';
 import { BottomTabInset, MaxContentWidth, Radii, Spacing } from '@/constants/theme';
 
 const confirmBackup = () =>
-  new Promise<boolean>((resolve) =>
-    Alert.alert(
-      'Back up first',
-      'This device will give every expense a new id so it can sync. Copy the app data (or pull the database with adb) before continuing.',
-      [
-        { text: 'Not yet', style: 'cancel', onPress: () => resolve(false) },
-        { text: 'I have a backup', onPress: () => resolve(true) },
-      ]
-    )
+  confirmAlert(
+    'Back up first',
+    'This device will give every expense a new id so it can sync. Copy the app data (or pull the database with adb) before continuing.',
+    'I have a backup'
   );
 
 type Mode = 'signin' | 'signup' | 'reset';

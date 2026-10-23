@@ -17,12 +17,12 @@ import {
   useFonts,
 } from '@expo-google-fonts/inter';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, BackHandler, View } from 'react-native';
+import { AppState, BackHandler, Platform, View } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import { SmsPermissionGate } from '@/components/sms-permission-gate';
 import { ThemeModeProvider, useTheme, useThemeMode } from '@/hooks/use-theme';
-import { isAndroid, startLiveCapture } from '@/lib/sms';
+import { hasSmsPermission, isAndroid, runScan, startLiveCapture } from '@/lib/sms';
 import { ensureNotificationsReady } from '@/lib/notify';
 import { getPref } from '@/lib/db';
 import { serverUrl, startBackgroundSync } from '@/lib/sync';
@@ -134,6 +134,14 @@ function NavigationShell() {
     // gate and leaves notifications with no channel to post on.
     if (isAndroid) void ensureNotificationsReady();
     startLiveCapture();
+
+    // The inbox is scanned once per launch, so a message that arrived while the app was
+    // closed is picked up without the user going to Settings to ask for it.
+    if (autoScanned) return;
+    autoScanned = true;
+    void (async () => {
+      if (await hasSmsPermission()) await runScan().catch(() => {});
+    })();
   }, []);
 
   // Foreground is the natural sync trigger: it is the only moment we know the user is
@@ -174,18 +182,21 @@ function NavigationShell() {
       if (url !== null) router.push(url);
     };
 
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      open(response.notification);
-    });
+    if (Platform.OS !== 'web') {
+      const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+        open(response.notification);
+      });
 
-    const last = Notifications.getLastNotificationResponse();
-    if (last?.notification) {
-      open(last.notification);
-      // Otherwise every later launch would re-open whatever was last tapped.
-      void Notifications.clearLastNotificationResponseAsync().catch(() => {});
+      const last = Notifications.getLastNotificationResponse();
+      if (last?.notification) {
+        open(last.notification);
+        // Otherwise every later launch would re-open whatever was last tapped.
+        void Notifications.clearLastNotificationResponseAsync().catch(() => {});
+      }
+
+      return () => sub.remove();
     }
-
-    return () => sub.remove();
+    return () => {};
   }, []);
 
   // Rendering before Inter arrives flashes the system face, then swaps. Hold the tree.
@@ -227,6 +238,7 @@ function NavigationShell() {
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="account" options={{ headerShown: false }} />
+        <Stack.Screen name="accounts" options={{ title: 'Accounts' }} />
         <Stack.Screen name="expense/[id]" options={{ title: 'Expense' }} />
       </Stack>
     </ThemeProvider>

@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -17,7 +17,8 @@ import {
   type Expense,
   type SimilarExpense,
 } from '@/lib/db';
-import { dayLabel, formatINR } from '@/lib/money';
+import { dayLabel, formatINR, timeLabel } from '@/lib/money';
+import { confirmAlert } from '@/lib/confirm';
 import { useTheme } from '@/hooks/use-theme';
 import { MaxContentWidth, Radii, Spacing } from '@/constants/theme';
 
@@ -88,18 +89,11 @@ export default function ExpenseScreen() {
     setPicked([]);
   };
 
-  const confirmDelete = () =>
-    void Alert.alert('Delete expense?', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteExpense(expense.id);
-          router.back();
-        },
-      },
-    ]);
+  const confirmDelete = async () => {
+    if (!(await confirmAlert('Delete expense?', 'This cannot be undone.', 'Delete'))) return;
+    await deleteExpense(expense.id);
+    router.back();
+  };
 
   return (
     <ThemedView style={styles.container}>
@@ -112,7 +106,12 @@ export default function ExpenseScreen() {
           </ThemedText>
           <ThemedText type="subtitle">{expense.merchant ?? 'Unknown merchant'}</ThemedText>
           <ThemedText type="small" themeColor="textMuted">
-            {new Date(expense.txn_at).toLocaleString()} · via {expense.source}
+            {new Date(expense.txn_at).toLocaleDateString(undefined, {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            })}
+            , {timeLabel(expense.txn_at)} · via {expense.source}
           </ThemedText>
         </View>
 

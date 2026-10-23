@@ -12,7 +12,7 @@ import { Chip, IconWell, Label, ProgressBar } from '@/components/ui-kit';
 import { CATEGORIES, CATEGORY_COLORS, type Category } from '@/lib/categories';
 import { useBudgets, useMonthData } from '@/hooks/use-data';
 import type { Expense } from '@/lib/db';
-import { dayLabel, formatINR, monthStart } from '@/lib/money';
+import { dayLabel, formatINR, monthStart, timeLabel } from '@/lib/money';
 import { onCaptured } from '@/lib/sms';
 import { useTheme } from '@/hooks/use-theme';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -233,10 +233,7 @@ export default function TimelineScreen() {
                       : `−${formatINR(item.amount_paise)}`}
                 </ThemedText>
                 <ThemedText type="small" themeColor="textMuted">
-                  {new Date(item.txn_at).toLocaleTimeString(undefined, {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
+                  {timeLabel(item.txn_at)}
                 </ThemedText>
               </View>
             </Pressable>

@@ -3,7 +3,7 @@ import * as SQLite from 'expo-sqlite';
 
 import { categorize, type Category } from './categories';
 import { addMonths, monthStart } from './money';
-import { parseSms, classify } from './parse';
+import { parseSms, classify, parseBalance } from './parse';
 
 export type Expense = {
   id: number;
@@ -108,6 +108,17 @@ export function getDb(): Promise<SQLite.SQLiteDatabase> {
     CREATE TABLE IF NOT EXISTS exclusions (
       merchant TEXT PRIMARY KEY
     );
+    CREATE TABLE IF NOT EXISTS balances (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account TEXT NOT NULL,
+      amount_paise INTEGER NOT NULL,
+      txn_at INTEGER NOT NULL,
+      raw_sms TEXT NOT NULL,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      source TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_balances_account ON balances (account, txn_at DESC);
   `);
       // Existing installs predate is_expense; ALTER throws once the column is there.
       try {
@@ -213,6 +224,18 @@ export async function ingestSms(
   receivedAt: number | null,
   source: string
 ): Promise<IngestOutcome> {
+  // The balance is read before the transaction rules, because a message that only
+  // quotes a balance is skipped as a balance enquiry and would otherwise lose it.
+  // A balance that cannot be stored must not cost the expense, so it fails on its own.
+  const balance = parseBalance(body);
+  if (balance !== null) {
+    try {
+      await recordBalance(balance.account, balance.amountPaise, body, receivedAt, source);
+    } catch {
+      // The transaction below still deserves to be logged.
+    }
+  }
+
   const result = parseSms(body, receivedAt);
   if (!result.ok) return { status: 'skipped', reason: result.reason };
 
@@ -290,6 +313,44 @@ export async function reclassifyPending(): Promise<number> {
     changed++;
   }
   return changed;
+}
+
+/**
+ * Repairs rows whose amount was read as the running balance that trailed the message.
+ *
+ * Before the balance-aware amount rules, a credit SMS could be stored with the balance
+ * as its amount. Dedupe means such a row never comes back through ingest, so it is
+ * corrected here instead: the row is re-parsed and the amount replaced when the parse
+ * now disagrees.
+ *
+ * Only income rows are touched, and only the amount: a row the user has since edited
+ * keeps its note and category, and a row that is not a transaction at all is left be.
+ */
+export async function repairMisparsedAmounts(): Promise<number> {
+  const d = await getDb();
+  const rows = await d.getAllAsync<{
+    id: number;
+    raw_sms: string;
+    txn_at: number;
+    amount_paise: number;
+    is_income: number;
+  }>('SELECT id, raw_sms, txn_at, amount_paise, is_income FROM expenses WHERE is_income = 1');
+
+  let fixed = 0;
+  for (const r of rows) {
+    const parsed = parseSms(r.raw_sms, r.txn_at);
+    if (!parsed.ok) continue;
+    if (parsed.parsed.kind !== 'income') continue;
+    if (parsed.parsed.amountPaise === r.amount_paise) continue;
+    await d.runAsync(
+      'UPDATE expenses SET amount_paise = ?, updated_at = ? WHERE id = ?',
+      parsed.parsed.amountPaise,
+      stamp(),
+      r.id
+    );
+    fixed++;
+  }
+  return fixed;
 }
 
 export async function listExpenses(monthMs: number): Promise<Expense[]> {
@@ -581,6 +642,9 @@ export async function clearAll(): Promise<void> {
   const at = stamp();
   await d.withTransactionAsync(async () => {
     await d.runAsync('DELETE FROM expenses');
+    // Balances are device-local (see the note below), so there is nothing to tombstone
+    // — but they are the user's data, and "clear everything" has to mean that.
+    await d.runAsync('DELETE FROM balances');
     for (const r of rows) {
       await d.runAsync(
         `INSERT INTO tombstones (kind, key, updated_at) VALUES ('expense', ?, ?)
@@ -590,6 +654,75 @@ export async function clearAll(): Promise<void> {
       );
     }
   });
+}
+
+/* ---------------------------------------------------------------------------
+ * Balances. A bank's SMS often quotes the running balance of the account it is
+ * talking about, and that number is worth keeping even when the message itself
+ * is not a transaction.
+ *
+ * Device-local: the sync server has no endpoint for balances, so a second device
+ * keeps its own. Nothing here is pushed or pulled.
+ * ------------------------------------------------------------------------- */
+
+export type Balance = {
+  id: number;
+  account: string;
+  amount_paise: number;
+  txn_at: number;
+  raw_sms: string;
+  source: string;
+};
+
+/**
+ * Stores the balance a message quoted.
+ *
+ * `dedupe_key` is the same body-plus-day key the expenses table uses, so the same SMS
+ * arriving over live capture and again over an inbox scan stores one row, not two.
+ */
+export async function recordBalance(
+  account: string,
+  amountPaise: number,
+  body: string,
+  receivedAt: number | null,
+  source: string
+): Promise<void> {
+  const d = await getDb();
+  const at = receivedAt ?? Date.now();
+  await d.runAsync(
+    `INSERT OR IGNORE INTO balances
+       (account, amount_paise, txn_at, raw_sms, dedupe_key, source, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    account,
+    amountPaise,
+    at,
+    body,
+    dedupeKey(body, at),
+    source,
+    stamp()
+  );
+}
+
+/** The newest balance seen for each account. */
+export async function listLatestBalances(): Promise<Balance[]> {
+  const d = await getDb();
+  // A correlated subquery rather than a window function: window functions need SQLite
+  // 3.25, and the system SQLite on older Android is older than that.
+  return d.getAllAsync<Balance>(
+    `SELECT * FROM balances b WHERE b.id = (
+       SELECT id FROM balances b2 WHERE b2.account = b.account
+       ORDER BY b2.txn_at DESC, b2.id DESC LIMIT 1
+     ) ORDER BY b.account`
+  );
+}
+
+/** Every balance ever seen for one account, newest first. */
+export async function listBalanceHistory(account: string): Promise<Balance[]> {
+  const d = await getDb();
+  return d.getAllAsync<Balance>(
+    'SELECT * FROM balances WHERE account = ? ORDER BY txn_at DESC, id DESC',
+    account
+  );
 }
 
 export async function getPref(key: string): Promise<string | null> {

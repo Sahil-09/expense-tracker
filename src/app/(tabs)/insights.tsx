@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -141,6 +141,24 @@ export default function InsightsScreen() {
           </View>
         )}
 
+        <Label>Accounts</Label>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Show account balances"
+          onPress={() => router.push('/accounts')}>
+          <Card>
+            <View style={styles.accountsRow}>
+              <View style={styles.accountsText}>
+                <ThemedText type="subtitle">Balances</ThemedText>
+                <ThemedText type="small" themeColor="textMuted">
+                  What each account last reported.
+                </ThemedText>
+              </View>
+              <LineIcon name="doc" size={18} color={theme.accent} />
+            </View>
+          </Card>
+        </Pressable>
+
         <Label>Top categories</Label>
         <Card>
           {byCategory.length === 0 ? (
@@ -207,6 +225,8 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
   },
   spendCard: { gap: Spacing.three },
+  accountsRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  accountsText: { gap: 2 },
   spendHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   delta: { borderRadius: Radii.pill, paddingHorizontal: Spacing.two + 2, paddingVertical: 4 },
   stats: {

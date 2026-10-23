@@ -19,7 +19,7 @@ export type ParseResult = { ok: true; parsed: Parsed } | { ok: false; reason: st
 // Checked before anything else. Anything matching is not a spend.
 const REJECT = [
   [/\b(otp|one[\s-]?time (password|code)|verification code|security code|do not share)\b/i, 'otp'],
-  [/\b(avail(able)? bal|available balance|your balance is|balance due)\b/i, 'balance-enquiry'],
+  [/\b(avl\.?\s*bal|avail(able)? bal|available balance|your balance is|balance due)\b/i, 'balance-enquiry'],
   [/\b(failed|declined|reversed|unsuccessful|could not be)\b/i, 'failed-transaction'],
   [/\b(pre[\s-]?approved|apply now|offer|voucher|lucky draw|click here|limited period|% ?off)\b/i, 'promotion'],
 ] as const;
@@ -56,10 +56,22 @@ const DEBIT_WEAK = /\b(payment of|purchase of|paid to|sent|due)\b/i;
  * to mention a due date still parses as a spend.
  */
 const REMINDER =
-  /\b(is due (on|by)|has been generated|bill (for|generated)|will be processed|will be debited|will be charged|upcoming mandate)\b/i;
+  /\b(is due (on|by)|has been generated|is generated|bill (for|generated)|will be processed|will be debited|will be charged|upcoming mandate|(?:min|max|total)\s+(?:amt|amount)\s+due\b|payable\s+(?:by|on)\b)\b/i;
 
 export function isDueMessage(body: string): boolean {
   return REMINDER.test(body);
+}
+
+/**
+ * Banks style words in mathematical letters ("𝐂𝐫𝐞𝐝𝐢𝐭𝐞𝐝"), and every keyword above is
+ * written in plain ASCII, so a styled credit reads as no direction at all and is
+ * dropped. Folding just that block back to ASCII is enough; NFKD over the whole body
+ * would also decompose the rupee sign and the dashes the parser relies on.
+ */
+const STYLED_LETTERS = /[\u{1D400}-\u{1D7FF}]/gu;
+
+function fold(body: string): string {
+  return body.replace(STYLED_LETTERS, (c) => c.normalize('NFKD'));
 }
 
 /**
@@ -94,16 +106,18 @@ export function isTransferMessage(body: string): boolean {
 
 /** What kind of row a raw message should become. Also used to re-check stored rows. */
 export function classify(body: string): SpendKind {
-  if (isDueMessage(body)) return 'due';
-  if (isTransferMessage(body)) return 'transfer';
+  const text = fold(body);
+  if (isDueMessage(text)) return 'due';
+  if (isTransferMessage(text)) return 'transfer';
   // A credit is money in, not a spend. It is stored so the month can show net spend,
   // but it is never counted as an expense.
-  if (detectDirection(body) === 'credit') return 'income';
+  if (detectDirection(text) === 'credit') return 'income';
   return 'spend';
 }
 
 const AMOUNT_PATTERNS = [
-  /(?:₹|rs\.?|inr)\s?([\d,]+(?:\.\d{1,2})?)/i, // Rs.500 / Rs 500 / ₹500 / INR 500
+  // Axis card statements write the total as "INR  Dr. 13436.07": currency, debit marker, number.
+  /(?:₹|rs\.?|inr)\s?(?:dr\.?\s*)?([\d,]+(?:\.\d{1,2})?)/i, // Rs.500 / Rs 500 / ₹500 / INR 500 / INR Dr. 500
   /([\d,]+(?:\.\d{1,2})?)\s*(?:inr|rs\.?|₹)/i, // 5000 INR / 500.00 INR
   // `by` is allowed because SBI UPI writes "debited by 1.00". The digit floor stays for
   // whole numbers, so a reference number or helpline is never read as money, but an
@@ -133,12 +147,38 @@ function detectDirection(body: string): Direction | null {
   return null;
 }
 
-function extractAmount(body: string): number | null {
+/**
+ * The words that introduce a running balance rather than a transaction.
+ *
+ * "Avl bal: INR 1,30,477.87" trails every HDFC credit, and it is the larger number, so
+ * a parser that takes the first currency match can log the balance as the amount.
+ * "Avl Limit" is a credit limit, which is also never a transaction.
+ *
+ * Each branch carries its own word boundary: a shared one after the group would never
+ * match the branches that end in a colon, and would fail on "total balance" too.
+ */
+const BALANCE_MARK =
+  /\b(?:avl\.?\s*(?:bal|balance|limit)\b|avail(?:able)?\s*(?:bal|balance)\b|total\s*bal(?:ance)?\b|closing\s*bal(?:ance)?\b|bal\.?\s*:(?!\w)|balance\s*(?:is|due)\b)/i;
+
+/** Every amount in the body, with the text that introduces it. */
+function amountCandidates(body: string): { paise: number; before: string }[] {
+  const out: { paise: number; before: string }[] = [];
   for (const re of AMOUNT_PATTERNS) {
-    const m = body.match(re);
-    const paise = m && toPaise(m[1]);
-    if (paise) return paise;
+    // A copy with the global flag, so every occurrence is seen. The originals stay
+    // flagless: a global regex carries lastIndex between calls.
+    const g = new RegExp(re.source, 'gi');
+    let m: RegExpExecArray | null;
+    while ((m = g.exec(body)) !== null) {
+      const paise = toPaise(m[1]);
+      if (paise) out.push({ paise, before: body.slice(Math.max(0, m.index - 26), m.index) });
+      if (m.index === g.lastIndex) g.lastIndex++;
+    }
   }
+  return out;
+}
+
+function extractAmount(body: string): number | null {
+  for (const c of amountCandidates(body)) if (!BALANCE_MARK.test(c.before)) return c.paise;
   return null;
 }
 
@@ -188,17 +228,20 @@ function build(year: number, month: number, day: number): number | null {
  * have a real sample that fails.
  */
 export function parseSms(body: string, receivedAt: number | null): ParseResult {
-  const text = body.replace(/\s+/g, ' ').trim();
+  const text = fold(body).replace(/\s+/g, ' ').trim();
   if (!text) return { ok: false, reason: 'empty' };
 
+  const direction = detectDirection(text);
+  const amountPaise = extractAmount(text);
+
   for (const [re, reason] of REJECT) {
+    // A credit SMS often quotes the running balance too. The credit is the transaction;
+    // the balance is not. So this only vetoes when the message carries no other money.
+    if (reason === 'balance-enquiry' && direction !== null && amountPaise !== null) continue;
     if (re.test(text)) return { ok: false, reason };
   }
 
-  const direction = detectDirection(text);
   if (direction === null) return { ok: false, reason: 'no-direction' };
-
-  const amountPaise = extractAmount(text);
   if (!amountPaise) return { ok: false, reason: 'no-amount' };
 
   const txnAt = receivedAt ?? parseBodyDate(text) ?? null;
@@ -211,4 +254,51 @@ export function parseSms(body: string, receivedAt: number | null): ParseResult {
     ok: true,
     parsed: { amountPaise, merchant, txnAt, direction, kind: classify(text) },
   };
+}
+
+/** The running balance a message quotes, and the account it belongs to. */
+type ParsedBalance = { account: string; amountPaise: number };
+
+/**
+ * The balance phrase, and the number that follows it.
+ *
+ * "Avl bal: INR 1,30,477.87" and "Available balance: Rs.1,30,477.87" are the two shapes
+ * Indian banks use. The number is captured by the phrase, so a transaction amount earlier
+ * in the message cannot be mistaken for it.
+ */
+const BALANCE_PHRASE =
+  /\b(?:avl\.?\s*(?:bal|balance)\b|avail(?:able)?\s*(?:bal|balance)\b|total\s*bal(?:ance)?\b|closing\s*bal(?:ance)?\b|bal\.?\s*:(?!\w)|balance\s*is\b)[^0-9]{0,14}?(?:₹|rs\.?|inr)?\s*([\d,]+(?:\.\d{1,2})?)/i;
+
+/** "HDFC Bank A/c XX5391" -> the bank and the masked account number. */
+const ACCOUNT_PAIR = /\b([A-Za-z]{3,12})\s+Bank\s+A\/c\s*\*?\s*([A-Za-z0-9]{3,})/i;
+const ACCOUNT_ONLY = /\bA\/c\s*\*?\s*([A-Za-z0-9]{4,})/i;
+
+const KNOWN_BANK =
+  /\b(hdfc|sbi|icici|axis|kotak|idfc|indusind|canara|pnb|yes\s*bank|union\s*bank|federal\s*bank|equitas|citi|hsbc|standard\s*chartered)\b/i;
+
+/**
+ * Reads the balance a message quotes, if it quotes one.
+ *
+ * A bank SMS often ends with the balance of the account it is talking about, and that
+ * number is worth keeping even when the message itself is not a transaction — a message
+ * that only says "Avl bal: INR 1,30,477.87" is skipped as a balance enquiry, and
+ * without this its balance would be thrown away with it.
+ *
+ * The account is the masked number the message names, with the bank for readability.
+ * Messages that name no account fall back to the bank, then to a generic key.
+ */
+export function parseBalance(body: string): ParsedBalance | null {
+  const text = fold(body).replace(/\s+/g, ' ').trim();
+  const m = BALANCE_PHRASE.exec(text);
+  if (!m) return null;
+  const amountPaise = toPaise(m[1]);
+  if (!amountPaise) return null;
+
+  const pair = ACCOUNT_PAIR.exec(text);
+  const only = ACCOUNT_ONLY.exec(text);
+  const bank = (pair?.[1] ?? KNOWN_BANK.exec(text)?.[1] ?? '').toUpperCase();
+  const acct = pair?.[2] ?? only?.[1] ?? null;
+
+  const account = bank && acct ? `${bank} ${acct}` : bank || acct || 'Account';
+  return { account, amountPaise };
 }

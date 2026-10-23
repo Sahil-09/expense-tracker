@@ -67,8 +67,16 @@ export function AnimatedMoney({
 
   // `text` is not a declared TextInput prop, so the hook needs the cast; reanimated's own
   // types for an animated prop on a custom component cannot see it.
+  //
+  // `defaultValue` goes in as well: on Android the native text only follows a prop that
+  // changes, and `text` is not one it knows, so without it the digits froze on whatever
+  // the counter was when it mounted. This is reanimated's own counter pattern.
   const animatedProps = useAnimatedProps(
-    () => ({ text: formatINRWorklet(display.value) }) as { text: string }
+    () =>
+      ({
+        text: formatINRWorklet(display.value),
+        defaultValue: formatINRWorklet(display.value),
+      }) as { text: string; defaultValue: string }
   );
 
   return (

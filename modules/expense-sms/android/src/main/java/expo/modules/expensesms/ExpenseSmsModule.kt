@@ -54,6 +54,7 @@ class ExpenseSmsModule : Module() {
 
     // The receiver lives in AndroidManifest.xml so it also fires while the app is
     // closed. Attaching a sink here is what lets those queued messages reach JS.
+    // Attaching the sink is what lets the queued messages reach JS.
     OnStartObserving {
       val ctx = appContext.reactContext
       SmsBridge.attach(object : SmsSink {

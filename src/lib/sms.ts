@@ -2,7 +2,7 @@ import { PermissionsAndroid, Platform } from 'react-native';
 
 import ExpenseSms from '@/modules/expense-sms/src/ExpenseSmsModule';
 
-import { ingestSms, reclassifyPending } from './db';
+import { ingestSms, reclassifyPending, repairMisparsedAmounts } from './db';
 import { notifyExpense } from './notify';
 import { syncInBackground } from './sync';
 
@@ -24,10 +24,12 @@ export const canReadSms = isAndroid && ExpenseSms != null;
  * deliver `SMS_RECEIVED` to the manifest receiver, so without it the app never sees a new
  * message arrive at all and auto-capture silently does nothing.
  */
-const SMS_PERMISSIONS = [
-  PermissionsAndroid.PERMISSIONS.READ_SMS,
-  PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
-];
+const SMS_PERMISSIONS = isAndroid
+  ? [
+      PermissionsAndroid.PERMISSIONS.READ_SMS,
+      PermissionsAndroid.PERMISSIONS.RECEIVE_SMS,
+    ]
+  : [];
 
 export async function hasSmsPermission(): Promise<boolean> {
   if (!isAndroid) return false;
@@ -52,6 +54,7 @@ const NOOP: ScanSummary = {
   skipped: 0,
   failed: 0,
   reclassified: 0,
+  repaired: 0,
 };
 
 /**
@@ -80,15 +83,29 @@ export function onScanState(fn: (s: ScanState) => void): () => void {
   };
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How far back a scan reaches.
+ *
+ * The launch scan uses this, and the inbox of a real phone is years deep: reading all of
+ * it on every start is a lot of reading for messages that are already logged. Ninety days
+ * is enough to catch anything that arrived while the app was closed.
+ *
+ * The manual "Scan inbox now" button passes 0, which reads the whole inbox, for the
+ * times the user wants the full history.
+ */
+export const BACKFILL_DAYS = 90;
+
 /**
  * The one way to start a scan. Auto-start on launch, the first-run gate and the two
  * scan buttons all go through here, so they cannot overlap and each gets progress.
  */
-export async function runScan(): Promise<ScanResult> {
+export async function runScan(days: number = BACKFILL_DAYS): Promise<ScanResult> {
   if (scanState.running) return { ok: true, ...NOOP };
   setScanState({ running: true, done: 0, total: 0, added: 0 });
   try {
-    const result = await scanInbox((done, total) => setScanState({ done, total }));
+    const result = await scanInbox(days, (done, total) => setScanState({ done, total }));
     setScanState({ running: false, added: result.ok ? result.added : 0 });
     // A scan that found nothing has nothing to push, and a scan that found something has
     // rows the server has never seen. This is the "fires after a scan" trigger; the other
@@ -109,23 +126,27 @@ export type ScanSummary = {
   failed: number;
   /** Existing rows moved into the dues section by this scan. */
   reclassified: number;
+  /** Existing rows whose amount was corrected by this scan. */
+  repaired: number;
 };
 
 export type ScanResult = ({ ok: true } & ScanSummary) | { ok: false; error: string };
 
 /**
- * Walks the entire inbox newest-first and feeds every message through the normal ingest
+ * Walks the inbox newest-first and feeds every message through the normal ingest
  * path. `scanned` matters as much as `added`: scanned 0 means we read nothing, while
  * scanned > 0 with added 0 means the parser rejected everything.
  *
- * The whole inbox, not a recent window: an expense from fourteen months ago is still an
- * expense, and the months with no messages cost nothing but a parse. Dedupe makes
- * re-scanning free of side effects, so there is no reason to hide older history.
+ * `days` is how far back to reach; 0 is the whole inbox. A launch scan passes a
+ * window, because the inbox of a real phone is years deep and reading all of it on
+ * every start is a lot of reading for messages that are already logged. Dedupe makes
+ * re-scanning free of side effects either way.
  *
  * `onProgress` fires per message so a screen can show a moving bar; a full inbox is long
  * enough that a spinner alone reads as a hang.
  */
 export async function scanInbox(
+  days: number = 0,
   onProgress?: (done: number, total: number) => void
 ): Promise<ScanResult> {
   if (!isAndroid) return { ok: false, error: 'Inbox reading is Android only.' };
@@ -141,20 +162,21 @@ export async function scanInbox(
 
   let messages;
   try {
-    // sinceMs 0 is the whole inbox: the native query is `date >= ?`, and no SMS has a
-    // non-positive timestamp.
-    messages = await ExpenseSms!.readInbox(0);
+    // The native query is `date >= ?`, so 0 is the whole inbox (no SMS has a
+    // non-positive timestamp) and a timestamp is a window ending now.
+    messages = await ExpenseSms!.readInbox(days > 0 ? Date.now() - days * DAY_MS : 0);
   } catch (e) {
     return { ok: false, error: `Inbox read failed: ${e instanceof Error ? e.message : String(e)}` };
   }
 
   const summary: ScanSummary = {
-    scanned: messages.length,
+    scanned: 0,
     added: 0,
     duplicates: 0,
     skipped: 0,
     failed: 0,
     reclassified: 0,
+    repaired: 0,
   };
   for (const m of messages) {
     try {
@@ -184,20 +206,21 @@ export async function scanInbox(
   } catch {
     summary.reclassified = 0;
   }
+
+  // Rows stored before the balance-aware amount rules may hold the running balance
+  // instead of the transaction. Dedupe keeps them from coming back through ingest, so
+  // they are corrected here.
+  try {
+    summary.repaired = await repairMisparsedAmounts();
+    if (summary.repaired > 0) notifyCaptured();
+  } catch {
+    summary.repaired = 0;
+  }
   return { ok: true, ...summary };
 }
 
-/**
- * How old a replayed message may be and still earn a popup. A message from while the app
- * was closed is news if the user is back minutes later, and stale by the next morning.
- * shortcut: fixed window, revisit if missed spends should notify however late.
- */
-const REPLAY_MAX_AGE_MS = 30 * 60 * 1000;
-
 const captured = new Set<() => void>();
 let liveSub: { remove: () => void } | null = null;
-/** One popup per cold start: a backlog of recent spends must not arrive as a burst. */
-let replayNotified = false;
 
 /** Fires every watcher. Live capture and the inbox scan both route through here. */
 function notifyCaptured(): void {
@@ -213,20 +236,15 @@ function notifyCaptured(): void {
  */
 export function startLiveCapture(): void {
   if (!canReadSms || liveSub) return;
-  replayNotified = false;
   const handler = (event: { body: string; date: number; isReplay?: boolean }) => {
     void ingestSms(event.body, event.date, 'android-live')
       .then(async (outcome) => {
         if (outcome.status !== 'added') return;
         notifyCaptured();
-        if (event.isReplay) {
-          // A replay is the app catching up on messages that arrived while it was closed
-          // (up to 200 queued). Pop once for the first one recent enough to be news; the
-          // rest are already on the timeline, and a backlog must not arrive as a burst.
-          if (replayNotified) return;
-          if (Date.now() - event.date > REPLAY_MAX_AGE_MS) return;
-          replayNotified = true;
-        }
+        // A replay is the app catching up on messages that arrived while it was closed.
+        // The receiver already posted a notification for each of them as they arrived, so
+        // raising one here too would show every spend twice.
+        if (event.isReplay) return;
         await notifyExpense(outcome.id);
       })
       // A live-capture failure has nowhere to surface; swallowing it keeps the app up.

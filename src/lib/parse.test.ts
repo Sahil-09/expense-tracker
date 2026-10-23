@@ -1,4 +1,4 @@
-import { parseSms, classify } from './parse';
+import { parseSms, classify, parseBalance } from './parse';
 import { categorize } from './categories';
 import { toPaise, formatINR } from './money';
 
@@ -94,6 +94,42 @@ describe('dues are announcements, not charges', () => {
 
   it('marks a generated bill as due', () => {
     expect(kindOf(AIRTEL_BILL)).toBe('due');
+  });
+
+  // Verbatim from the device inbox. Axis writes the statement as "is generated" (not
+  // "has been generated") and the total as "INR  Dr. 13436.07" — currency, then the debit
+  // marker, then the number. Both fixes must stay together: the amount rule alone would
+  // have made this a ₹13,436 spend.
+  const AXIS_STATEMENT = `Your statement for Axis Bank Credit Card no. XX8495 is generated.
+Due on: 09-11-26
+Total amt: INR  Dr. 13436.07
+Min amt due: INR  Dr. 269.00
+Pay at axis.bank.in/ccpaynow
+To view fees & charges: axis.bank.in/kfs`;
+
+  it('marks an Axis card statement as due, for the total not the minimum', () => {
+    const r = parse(AXIS_STATEMENT);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.parsed.kind).toBe('due');
+    expect(r.parsed.amountPaise).toBe(1343607);
+  });
+
+  // Verbatim from the device inbox. Nothing in it matches the older reminder wording
+  // ("is due on", "bill generated"), and "If not received" reads as a credit, so the
+  // statement used to store as income. The "amount due"/"payable by" wording is what
+  // marks it as a due.
+  const SBI_STATEMENT =
+    'E-statement of SBI Credit Card ending XX61 dated 12/10/2026 has been mailed. If not ' +
+    'received, SMS ENRS to 5676791. Total Amt Due Rs 149; Min Amt Due Rs 149; Payable by ' +
+    '01/11/2026. Click https://sbicard.com/quickpaynet to pay your bill';
+
+  it('marks an SBI e-statement reminder as due, not income', () => {
+    const r = parse(SBI_STATEMENT);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.parsed.kind).toBe('due');
+    expect(r.parsed.amountPaise).toBe(14900);
   });
 
   it('still reads the amount and date out of a reminder, so the obligation is visible', () => {
@@ -401,6 +437,108 @@ describe('parseSms - accepts spends', () => {
 
   it('still ignores a balance owed back to you', () => {
     expect(parse('Balance due Rs 500.00')).toEqual({ ok: false, reason: 'balance-enquiry' });
+  });
+});
+
+/**
+ * The HDFC salary credit, verbatim. Three things in it used to break the parser: the
+ * title is styled in mathematical letters, "Rs. INR" stacks two currency words, and
+ * the running balance at the end is the larger of the two numbers.
+ */
+const HDFC_SALARY =
+  '\u{1F4E9} \u{1D412}\u{1D41A}\u{1D425}\u{1D41A}\u{1D42B}\u{1D432} \u{1D402}\u{1D42B}\u{1D41E}\u{1D41D}\u{1D422}\u{1D42D}\u{1D41E}\u{1D41D}! ' +
+  'Rs. INR 15,311.00 credited to your HDFC Bank A/c XX5391. Avl bal: INR 1,30,477.87';
+
+describe('a salary credit is income, and its balance is not the amount', () => {
+  it('reads the credit amount, not the balance that follows it', () => {
+    const r = parse(HDFC_SALARY);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.parsed.kind).toBe('income');
+    expect(r.parsed.direction).toBe('credit');
+    expect(r.parsed.amountPaise).toBe(1531100);
+  });
+
+  it('reads a credit whose only keyword is styled in mathematical letters', () => {
+    // The same message with the body keyword replaced by the styled one, so the
+    // direction can only come from the title.
+    const styled =
+      '\u{1D412}\u{1D41A}\u{1D425}\u{1D41A}\u{1D42B}\u{1D432} \u{1D402}\u{1D42B}\u{1D41E}\u{1D41D}\u{1D422}\u{1D42D}\u{1D41E}\u{1D41D}! ' +
+      'Rs. INR 15,311.00 to your HDFC Bank A/c XX5391. Avl bal: INR 1,30,477.87';
+    const r = parse(styled);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.parsed.kind).toBe('income');
+    expect(r.parsed.amountPaise).toBe(1531100);
+  });
+
+  it('is still a credit when the balance is spelled out in full', () => {
+    const r = parse(
+      'Rs. INR 15,311.00 credited to your HDFC Bank A/c XX5391. Available balance: INR 1,30,477.87'
+    );
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.parsed.kind).toBe('income');
+    expect(r.parsed.amountPaise).toBe(1531100);
+  });
+
+  it('keeps a spend a spend when it also quotes the balance', () => {
+    for (const body of [
+      'Rs.500 debited at SWIGGY on 21/10/2026. Avl bal: INR 1,30,477.87',
+      'Rs.500 debited at SWIGGY on 21/10/2026. Available balance: INR 1,30,477.87',
+    ]) {
+      const r = parse(body);
+      expect(r.ok).toBe(true);
+      if (!r.ok) return;
+      expect(r.parsed.kind).toBe('spend');
+      expect(r.parsed.amountPaise).toBe(50000);
+    }
+  });
+});
+
+describe('parseBalance', () => {
+  it('reads the balance and the account a message names', () => {
+    expect(parseBalance(HDFC_SALARY)).toEqual({
+      account: 'HDFC XX5391',
+      amountPaise: 13047787,
+    });
+  });
+
+  it('reads a balance-only message, which the transaction rules skip', () => {
+    const body = 'Avl bal: INR 1,30,477.87 on your HDFC Bank A/c XX5391';
+    expect(parse(body)).toEqual({ ok: false, reason: 'balance-enquiry' });
+    expect(parseBalance(body)).toEqual({ account: 'HDFC XX5391', amountPaise: 13047787 });
+  });
+
+  it('has nothing to say about a message that quotes no balance', () => {
+    expect(parseBalance('Rs.500 debited at SWIGGY on 21/10/2026')).toBeNull();
+  });
+
+  it('does not read a credit limit as a balance', () => {
+    expect(
+      parseBalance('Spent INR 824.82\nAxis Bank Card no. XX8495\nAvl Limit: INR 134988.13')
+    ).toBeNull();
+  });
+
+  it('reads the balance however the bank words it', () => {
+    for (const [body, amountPaise] of [
+      ['Bal: INR 500 on your HDFC Bank A/c XX5391', 50000],
+      ['Total balance INR 90 on your HDFC Bank A/c XX5391', 9000],
+      ['Closing balance INR 90 on your HDFC Bank A/c XX5391', 9000],
+      ['Avl bal INR 90 on your HDFC Bank A/c XX5391', 9000],
+    ] as const) {
+      expect(parseBalance(body)).toEqual({ account: 'HDFC XX5391', amountPaise });
+    }
+  });
+
+  it('does not log a balance-only message as a spend', () => {
+    for (const body of [
+      'Bal: INR 500 on your HDFC Bank A/c XX5391',
+      'Total balance INR 90 on your HDFC Bank A/c XX5391',
+      'Closing balance INR 90 on your HDFC Bank A/c XX5391',
+    ]) {
+      expect(parse(body).ok).toBe(false);
+    }
   });
 });
 

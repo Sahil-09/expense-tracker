@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useFocusEffect, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -26,6 +26,7 @@ import {
   syncNow,
   type SyncState,
 } from '@/lib/sync';
+import { confirmAlert } from '@/lib/confirm';
 import { clearAll, countExpenses } from '@/lib/db';
 import { formatINR } from '@/lib/money';
 import { BottomTabInset, MaxContentWidth, Radii, Spacing } from '@/constants/theme';
@@ -72,7 +73,8 @@ export default function SettingsScreen() {
     setStatus(null);
     // Without this, any thrown error escapes `void doScan()` as an unhandled rejection
     // and pops a red box instead of a message the user can read.
-    const result = await runScan().catch((e) => ({
+    // The manual scan reads the whole inbox: the user asked for everything.
+    const result = await runScan(0).catch((e) => ({
       ok: false as const,
       error: e instanceof Error ? e.message : String(e),
     }));
@@ -90,6 +92,7 @@ export default function SettingsScreen() {
         `Read ${result.scanned} · added ${result.added} · already had ${result.duplicates} · ` +
           `skipped ${result.skipped} (not a spend)` +
           (result.reclassified > 0 ? ` · ${result.reclassified} moved out of totals` : '') +
+          (result.repaired > 0 ? ` · ${result.repaired} amount(s) fixed` : '') +
           (result.failed > 0 ? ` · ${result.failed} failed` : '') +
           '.'
       );
@@ -280,21 +283,13 @@ export default function SettingsScreen() {
           <Button
             label="Clear all expenses"
             tone="danger"
-            onPress={() =>
-              void Alert.alert('Clear all expenses?', 'This permanently deletes every logged expense.', [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete',
-                  style: 'destructive',
-                  onPress: () => {
-                    void clearAll().then(async () => {
-                      setCount(await countExpenses());
-                      setStatus('All expenses deleted.');
-                    });
-                  },
-                },
-              ])
-            }
+            onPress={async () => {
+              if (!(await confirmAlert('Clear all expenses?', 'This permanently deletes every logged expense.', 'Delete'))) return;
+              void clearAll().then(async () => {
+                setCount(await countExpenses());
+                setStatus('All expenses deleted.');
+              });
+            }}
           />
         </Card>
 
